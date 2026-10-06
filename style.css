@@ -1263,3 +1263,35 @@ dialog::backdrop{background:#34405420}
 .rich-editor ul,.rich-editor ol,.rich-reading ul,.rich-reading ol{padding-left:24px;white-space:normal}
 @media(max-width:1000px){main{padding:0 20px 30px}.board-reading .knowledge-board-surface{grid-template-columns:minmax(0,1fr)}}
 @media(max-width:640px){main{margin-left:0;padding:0 12px 24px}aside{position:relative;width:100%;padding:16px}header{flex-wrap:wrap;padding:14px 0}.block.knowledge-board{padding:16px 10px 16px 50px}.board-reading{padding-left:12px!important}.board-local-tools{left:5px}.rich-toolbar{gap:4px}.whiteboard-content-body{padding:10px}h1{font-size:25px}}
+
+/* 自动跟随工具、紧凑标题栏与全局总览。 */
+.board-tools-grip{display:none}
+.board-local-tools{transition:top .12s ease-out}
+.board-editing .knowledge-board-scroll{max-height:calc(100vh - 190px);min-height:260px;overscroll-behavior:contain}
+.board-stage{position:relative}
+.whiteboard-content-head{width:max-content;max-width:100%;align-self:flex-start;border:0;border-radius:6px;padding:4px 7px;gap:4px;cursor:grab;touch-action:none;height:36px;}
+.whiteboard-content-head:active{cursor:grabbing}
+.whiteboard-content-head input{flex:none;min-width:0;max-width:calc(100vw - 150px);cursor:grab;text-overflow:ellipsis;pointer-events:auto!important}
+.whiteboard-content-head.naming{width:max-content;max-width:100%;cursor:text}
+.whiteboard-content-head.naming input{cursor:text;touch-action:auto;background:white;outline:1px solid #c5d7e1}
+.whiteboard-content-head .content-drag-handle{display:none}
+.whiteboard-content-head button{cursor:pointer}
+.knowledge-page-add{margin-top:10px;position:relative}
+.knowledge-page-add>summary{list-style:none;cursor:pointer;display:grid;place-items:center;width:32px;height:32px;color:#425c73;border:1px solid #dde5ec;border-radius:6px;}
+.knowledge-page-add>summary::-webkit-details-marker{display:none}
+.new-page-form{padding:10px 0;display:flex;flex-direction:column;gap:8px}
+.new-page-form input{width:100%;min-width:0}
+.fit-whiteboards{display:grid;place-items:center;padding:7px}
+.fit-whiteboards[aria-pressed=true]{background:#dcebf0}
+.board-overview{overflow:hidden}
+.board-overview::before{content:"";position:fixed;inset:0;background:#f4f7f9;z-index:80}
+.board-overview #fit-whiteboards{position:fixed;right:18px;top:18px;z-index:100}
+.board-overview #blocks{position:fixed!important;z-index:90;margin:0!important;max-width:none!important;}
+.board-overview .knowledge-board-scroll{max-height:none!important;overflow:visible!important}
+.board-overview .board-local-tools,.board-overview .new-board-entry{display:none}
+@media(prefers-reduced-motion:reduce){.board-local-tools{transition:none}}
+
+.board-overview .board-editing .knowledge-board-scroll{max-width:none;width:max-content}
+
+.whiteboard-content-head input{flex-shrink:1}
+.board-overview .knowledge-board{pointer-events:none}

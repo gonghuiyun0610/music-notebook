@@ -2,6 +2,7 @@
 "use strict";
 let searchKind="knowledge";
 let deletedKnowledge=null;
+let deleteToastTimer=null;
 
 function boardAddKnowledge(){
   stop();
@@ -43,6 +44,8 @@ function removeKnowledgeItem(id){
     })
   ]);
   document.body.append(toast);
+  clearTimeout(deleteToastTimer);
+  deleteToastTimer=setTimeout(()=>{toast.remove();deletedKnowledge=null;},3000);
 }
 
 function closeOutside(event){
@@ -116,10 +119,16 @@ nav=function(){
         }}links(p.blocks,chapter);group.append(chapter);
       }region.append(group);
     }
-    region.append(button(kind==="knowledge"?"＋ 新增知识页面":"＋ 新增练习页面",()=>{
-      const title=prompt("页面标题");if(!title?.trim())return;
-      const p={id:uid(),title:title.trim(),category:"未分类",kind,blocks:[]};data.pages.push(p);current=p.id;editing=true;practiceHome=false;redraw();
-    },"nav-add-page"));navNode.append(region);
+    if(kind==="knowledge"){
+      const entry=el("details",{class:"knowledge-page-add board-add-menu"});
+      entry.append(el("summary",{text:"＋","aria-label":"新增知识页面"}));
+      const form=el("form",{class:"new-page-form"});
+      const name=el("input",{placeholder:"知识页面名称","aria-label":"新知识页面名称",required:""});
+      const submit=el("button",{text:"新增知识页面",type:"submit",class:"primary"});
+      form.append(name,submit);form.onsubmit=e=>{e.preventDefault();const title=name.value.trim();if(!title)return;stop();const p={id:uid(),title,category:"未分类",kind:"knowledge",blocks:[]};data.pages.push(p);current=p.id;editing=true;practiceHome=false;redraw();};
+      entry.append(form);region.append(entry);
+    }
+    navNode.append(region);
   }
 };
 
@@ -222,3 +231,48 @@ validate=function(x){
     }
   });return result;
 };
+
+// 主滚动条移动时，当前白板的工具组自动留在可操作区域。
+let toolFrame=0;
+function followBoardTools(){
+  toolFrame=0;
+  document.querySelectorAll(".board-local-tools").forEach(tools=>{
+    const board=tools.closest(".knowledge-board"),rect=board.getBoundingClientRect();
+    const height=rect.height,toolHeight=tools.offsetHeight||94;
+    tools.style.top=clamp(100-rect.top,58,Math.max(58,height-toolHeight-16))+"px";
+  });
+}
+function queueBoardTools(){if(!toolFrame)toolFrame=requestAnimationFrame(followBoardTools);}
+document.addEventListener("scroll",queueBoardTools,true);
+window.addEventListener("resize",()=>{queueBoardTools();if(boardOverview)fitBoardOverview();});
+
+let boardOverview=false,overviewWidth=0;
+function exitBoardOverview(){
+  if(!boardOverview)return;
+  boardOverview=false;document.body.classList.remove("board-overview");
+  const blocks=$("blocks");blocks.style.transform="";blocks.style.width="";blocks.style.left="";blocks.style.top="";
+  document.getElementById("fit-whiteboards")?.setAttribute("aria-pressed","false");
+}
+function fitBoardOverview(){
+  const blocks=$("blocks");blocks.style.transform="none";blocks.style.width=overviewWidth+"px";
+  const width=Math.max(1,blocks.scrollWidth||blocks.getBoundingClientRect().width);
+  const height=Math.max(1,blocks.scrollHeight||blocks.getBoundingClientRect().height);
+  const availableWidth=(window.innerWidth||1200)-32,availableHeight=(window.innerHeight||800)-120;
+  const scale=Math.min(1,availableWidth/width,availableHeight/height);
+  blocks.style.transformOrigin="top left";blocks.style.transform="scale("+scale+")";
+  blocks.style.left=(16+(availableWidth-width*scale)/2)+"px";blocks.style.top=(100+(availableHeight-height*scale)/2)+"px";
+}
+function toggleBoardOverview(){
+  if(boardOverview){exitBoardOverview();return;}
+  overviewWidth=$("blocks").clientWidth||900;boardOverview=true;
+  document.body.classList.add("board-overview");
+  document.getElementById("fit-whiteboards").setAttribute("aria-pressed","true");
+  fitBoardOverview();requestAnimationFrame(fitBoardOverview);
+}
+document.addEventListener("keydown",e=>{if(e.key==="Escape")exitBoardOverview();});
+const fitButton=button("",toggleBoardOverview,"fit-whiteboards");
+fitButton.id="fit-whiteboards";fitButton.setAttribute("aria-label","全局自适应；再次点击恢复");fitButton.setAttribute("title","全局自适应 / 恢复");fitButton.setAttribute("aria-pressed","false");
+fitButton.innerHTML='<svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path d="M12 3v18M3 12h18M9 6l3-3 3 3M9 18l3 3 3-3M6 9l-3 3 3 3M18 9l3 3-3 3" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+document.querySelector("header .actions").prepend(fitButton);
+const workspacePreviousRender=render;
+render=function(){exitBoardOverview();workspacePreviousRender();fitButton.hidden=practiceHome;queueBoardTools();};

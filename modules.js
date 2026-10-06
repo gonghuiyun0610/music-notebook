@@ -730,7 +730,11 @@ function renderPractice() {
   ]);
   entries
     .filter((x) => !x.b.practiceTags.length)
-    .forEach((x) => un.append(practiceCard(x.p, x.b)));
+    .forEach((x) => {
+      const card=practiceCard(x.p,x.b);
+      card.append(button("移出练习",()=>{x.b.needsPractice=false;redraw();}));
+      un.append(card);
+    });
   const classified = el("section", { class: "practice-column" }, [
     el("h2", { text: "已分类" }),
   ]);
@@ -1155,7 +1159,35 @@ function drumSound(kind, when, bus) {
     src.start(when);
   }
 }
+// 每次由用户重新播放时重建输出，避免 Mac/Safari 保留失效的音频上下文。
+let playbackRequest=0;
+function createPlaybackAudio(){
+  const AudioAPI=window.AudioContext || window.webkitAudioContext;
+  if(!AudioAPI)throw Error("当前浏览器不支持网页音频，请使用 Safari、Chrome 或 Edge。");
+  const previous=ctx;
+  if(previous && previous.state!=="closed")previous.close().catch(()=>{});
+  try{if(typeof navigator!=="undefined" && navigator.audioSession)navigator.audioSession.type="playback";}catch{}
+  let audio;
+  try{audio=new AudioAPI({latencyHint:"interactive"});}catch{audio=new AudioAPI();}
+  ctx=audio;
+  // 在本次点击手势内启动并解锁输出，不能把这一步放到等待之后。
+  try{
+  const resumed=audio.resume();
+  const unlock=audio.createBufferSource();
+  unlock.buffer=audio.createBuffer(1,1,audio.sampleRate);
+  unlock.connect(audio.destination);unlock.onended=()=>unlock.disconnect();unlock.start(0);
+  return {audio,resumed};
+  }catch(error){audio.close().catch(()=>{});if(ctx===audio)ctx=undefined;throw error;}
+}
+function playbackHasSound(b,lo,end){
+  if(b.type==="midi")return b.notes.some(n=>!n.muted && n.velocity>0 && n.start<end && n.start+n.duration>lo);
+  return (b.visible||[]).some(key=>!(b.muted||[]).includes(key) && (
+    (b.tracks[key]||[]).some((hit,step)=>hit && step>=lo && step<end) ||
+    (b.fineHits?.[key]||[]).some(step=>step>=lo && step<end)
+  ));
+}
 function pausePlayback() {
+  playbackRequest++;
   if (!transport) return;
   const t = transport;
   const v = stateFor(t.block);
@@ -1166,7 +1198,7 @@ function pausePlayback() {
     : Math.min(end - 0.001, t.from + elapsed);
   clearInterval(t.timer);
   cancelAnimationFrame(t.raf);
-  t.bus.disconnect();
+  try{t.bus.disconnect();}catch{}
   transport = null;
   if (t.block.type === "rhythm") drawDrumPlayhead(t.block, v.cursor);
   document
@@ -1186,15 +1218,26 @@ async function togglePlayback(b) {
     return;
   }
   stop();
+  const request=playbackRequest;
+  let pendingAudio=null;
   try {
-    ctx ||= new (window.AudioContext || window.webkitAudioContext)();
-    await ctx.resume();
+    repairBlock(b);
     const v = stateFor(b);
     const total = b.bars * meterSteps(b);
     const lo = v.loop ? clamp(v.loopA, 0, total - 1) : 0;
     const end = v.loop ? clamp(v.loopB, lo + 1, total) : total;
+    if(!playbackHasSound(b,lo,end)){
+      status("当前循环范围内没有可发声的"+(b.type==="midi"?"音符":"鼓点")+"。请检查内容和静音状态。");return;
+    }
+    const startup=createPlaybackAudio();pendingAudio=startup.audio;
+    let startupTimeout;
+    try{await Promise.race([startup.resumed,new Promise((_,reject)=>{startupTimeout=setTimeout(()=>reject(Error("音频启动超时，请再次点击播放。")),4000);})]);}
+    finally{clearTimeout(startupTimeout);}
+    if(request!==playbackRequest){if(ctx===pendingAudio){pendingAudio.close().catch(()=>{});ctx=undefined;}return;}
+    if(ctx.state!=="running")throw Error("音频输出未启动（"+ctx.state+"），请再次点击播放。");
     const from = clamp(v.cursor ?? v.start, lo, end - 0.001);
     const bus = ctx.createGain();
+    bus.gain.setValueAtTime(1,ctx.currentTime);
     bus.connect(ctx.destination);
     const tr = {
       id: b.id,
@@ -1272,6 +1315,7 @@ async function togglePlayback(b) {
     }
     function draw() {
       if (transport !== tr) return;
+      if(ctx.state!=="running"){pausePlayback();status("音频输出已中断，请点击播放恢复。");return;}
       let position =
         from + Math.max(0, ctx.currentTime - tr.started) / tr.seconds;
       if (position >= end) {
@@ -1295,6 +1339,9 @@ async function togglePlayback(b) {
     tr.timer = setInterval(schedule, 25);
     draw();
   } catch (e) {
+    if(request!==playbackRequest)return;
+    stop();
+    if(pendingAudio && ctx===pendingAudio){pendingAudio.close().catch(()=>{});ctx=undefined;}
     status("播放失败：" + e.message);
   }
 }

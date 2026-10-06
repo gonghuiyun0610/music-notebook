@@ -6,6 +6,8 @@
 "use strict";
 let boardActiveContent = null;
 let boardSelectedKnowledge = null;
+const boardViews=new Map();
+function boardView(id){if(!boardViews.has(id))boardViews.set(id,{scale:1,left:0,top:0});return boardViews.get(id);}
 const BOARD_TYPES = [
   ["text", "文本"],
   ["rhythm", "鼓"],
@@ -256,7 +258,7 @@ function boardAddContent(board, type, point) {
   const y = board.children.length
     ? Math.max(...board.children.map((c) => c.layout.y + c.layout.height)) + 24
     : 24;
-  child.layout = { x: point?.x ?? 24, y: point?.y ?? y, ...size };
+  child.layout = { x: point?.x ?? 24, y: point?.y ?? y, ...size, z:Math.max(0,...board.children.map(c=>c.layout.z||0))+1 };
   board.children.push(child);
   boardActiveContent = child.id;
   boardSelectedKnowledge = board.id;
@@ -272,20 +274,30 @@ function boardActivate(id) {
     section.querySelectorAll(".rich-editor").forEach(input => input.contentEditable = String(active));
   });
 }
+function boardPositionNew(board,size) {
+  exitBoardOverview();
+  const viewport=document.getElementById("block-"+board.id)?.querySelector(".knowledge-board-scroll");
+  viewport?.scrollIntoView({block:"nearest",inline:"nearest"});
+  const view=boardView(board.id);
+  const rect=viewport?.getBoundingClientRect();
+  const width=viewport?.clientWidth || 900;
+  const screenHeight=window.innerHeight || 800;
+  const visibleTop=Math.max(rect?.top || 0,80), visibleBottom=Math.min(rect?.bottom ?? screenHeight,screenHeight-28);
+  const height=Math.max(220,visibleBottom-visibleTop);
+  const centerY=Math.max(0,visibleTop-(rect?.top || 0))+height/2;
+  const oldScale=view.scale;
+  const centerX=((viewport?.scrollLeft||0)+width/2)/oldScale;
+  const center=((viewport?.scrollTop||0)+centerY)/oldScale;
+  view.scale=Math.min(1,(width-48)/size.width,(height-48)/size.height);
+  view.scale=Math.max(.05,view.scale);
+  const point={x:Math.max(24,centerX-size.width/2,(width/view.scale-size.width)/2),y:Math.max(24,center-size.height/2,(centerY/view.scale-size.height/2))};
+  view.left=Math.max(0,(point.x+size.width/2)*view.scale-width/2);
+  view.top=Math.max(0,(point.y+size.height/2)*view.scale-centerY);
+  return point;
+}
 function boardAddPart(board, type) {
-  const viewport = document.getElementById("block-" + board.id)?.querySelector(".knowledge-board-scroll");
-  const origin = {x:24+(viewport?.scrollLeft || 0),y:24+(viewport?.scrollTop || 0)};
-  // 在当前可见白板区域找一个空位，避免新部件落在视野外。
-  const size = BOARD_DEFAULTS[type];
-  let point = {...origin};
-  for(let attempt=0; attempt<100; attempt++) {
-    const overlap = board.children.find(c => point.x < c.layout.x+c.layout.width && point.x+size.width > c.layout.x && point.y < c.layout.y+c.layout.height && point.y+size.height > c.layout.y);
-    if(!overlap) break;
-    point.y = overlap.layout.y+overlap.layout.height+24;
-  }
-  boardAddContent(board,type,point);
+  boardAddContent(board,type,boardPositionNew(board,BOARD_DEFAULTS[type]));
   redraw();
-  requestAnimationFrame(() => document.getElementById("block-"+boardActiveContent)?.scrollIntoView({block:"nearest",inline:"nearest"}));
 }
 contentMenu = function(list) {
   const board = allBlocks().find(x => x.b.type === "group" && x.b.children === list)?.b;
@@ -293,16 +305,7 @@ contentMenu = function(list) {
 };
 function boardLocalTools(board, list) {
   const tools = el("div", {class:"board-local-tools"});
-  tools.style.top=(board.toolY ?? 72)+"px";
-  const grip=button("⠿",()=>{},"board-tools-grip");
-  grip.setAttribute("aria-label","上下移动添加与知识块操作按钮");
-  tools.append(grip);
-  let moving=null;
-  grip.onpointerdown=e=>{if(e.button!==undefined&&e.button!==0)return;e.preventDefault();moving={y:e.clientY,start:board.toolY ?? 72};grip.setPointerCapture?.(e.pointerId);};
-  grip.onpointermove=e=>{if(!moving)return;const height=tools.closest(".knowledge-board")?.clientHeight || 1000;board.toolY=clamp(moving.start+e.clientY-moving.y,52,Math.max(52,height-130));tools.style.top=board.toolY+"px";};
-  grip.onpointerup=()=>{if(moving){moving=null;changed();}};
-  grip.onpointercancel=()=>{if(moving){board.toolY=moving.start;tools.style.top=board.toolY+"px";moving=null;}};
-  grip.onkeydown=e=>{if(!["ArrowUp","ArrowDown"].includes(e.key))return;e.preventDefault();const height=tools.closest(".knowledge-board")?.clientHeight || 1000;board.toolY=clamp((board.toolY ?? 72)+(e.key==="ArrowDown"?20:-20),52,Math.max(52,height-130));tools.style.top=board.toolY+"px";changed();};
+  tools.style.top="72px";
   const menu = el("details", {class:"board-add-menu"});
   menu.append(el("summary", {text:"＋", "aria-label":"添加白板部件"}));
   const panel = el("div", {class:"board-add-options"});
@@ -345,7 +348,7 @@ async function boardFileContent(board, file, point) {
     mime =
       file.type || (isImage ? imageTypes[extension] : audioTypes[extension]);
   await dbPut(id, new File([file], file.name, { type: mime }));
-  const child = boardAddContent(board, type, point);
+  const child = boardAddContent(board, type, boardPositionNew(board,BOARD_DEFAULTS[type]));
   child.src = "asset:" + id;
   child.assetId = id;
   child.assetName = file.name;
@@ -375,6 +378,7 @@ function boardContent(b, list, owner) {
     section.style.top = layout.y + "px";
     section.style.width = layout.width + "px";
     section.style.height = layout.height + "px";
+    section.style.zIndex=String(layout.z||0);
   }
   apply();
   const head = el("div", { class: "whiteboard-content-head" });
@@ -382,18 +386,15 @@ function boardContent(b, list, owner) {
     const handle = button("⠿", () => {}, "content-drag-handle");
     handle.setAttribute("aria-label", "拖动内容块");
     head.append(handle);
-    head.append(
-      el("input", {
-        value: blockTitle(b),
-        "aria-label": "内容块标题",
-        oninput: (e) => {
-          b.title = e.target.value;
-          b.name = b.title;
-          changed();
-          nav();
-        },
-      }),
-    );
+    const name=el("input",{value:blockTitle(b),"aria-label":"内容块标题",readonly:""});
+    name.readOnly=true;
+    const sizeName=()=>{name.style.width=Math.min(600,Math.max(64,Array.from(name.value).reduce((n,c)=>n+(/[^\x00-\xff]/.test(c)?14:8),0)+20))+"px";};
+    sizeName();
+    head.ondblclick=e=>{if(e.target.closest?.("button"))return;e.stopPropagation();name.readOnly=false;head.classList.add("naming");name.focus();name.select?.();};
+    name.oninput=()=>{sizeName();};
+    name.onblur=()=>{b.title=name.value.trim()||blockTitle(b);b.name=b.title;name.value=b.title;name.readOnly=true;head.classList.remove("naming");sizeName();changed();nav();};
+    name.onkeydown=e=>{if(!name.readOnly && e.key==="Enter"){e.preventDefault();name.blur();}if(!name.readOnly && e.key==="Escape"){name.value=blockTitle(b);name.blur();}};
+    head.append(name);
     head.append(
       button("⋯", () => {
         const d = el("dialog", {}, [el("h2", { text: "内容块操作" })]);
@@ -401,8 +402,8 @@ function boardContent(b, list, owner) {
           button("复制", () => {
             const c = clone(b);
             walk([c], (n) => (n.id = uid()));
-            c.layout.x += 24;
-            c.layout.y += 24;
+            Object.assign(c.layout,boardPositionNew(owner,c.layout));
+            c.layout.z=Math.max(0,...owner.children.map(n=>n.layout.z||0))+1;
             list.push(c);
             d.close();
             redraw();
@@ -418,7 +419,8 @@ function boardContent(b, list, owner) {
         d.showModal();
       }),
     );
-    attachDrag(handle, false);
+    head.tabIndex=0;head.setAttribute("aria-label","拖动组件标题栏；双击名称修改");
+    attachDrag(head, false);
   } else head.append(el("span", { text: blockTitle(b) }));
   section.append(head);
   const body = el("div", {
@@ -458,10 +460,13 @@ function boardContent(b, list, owner) {
   function attachDrag(handle, resizing) {
     let drag = null;
     handle.onpointerdown = (e) => {
+      if(boardOverview)return;
       if (e.button !== undefined && e.button !== 0) return;
+      if(!resizing && (e.target.closest?.("button") || e.target.closest?.("input")?.readOnly===false))return;
       e.preventDefault();
       e.stopPropagation();
       stop();
+      layout.z=Math.max(0,...owner.children.map(c=>c.layout.z||0))+1;apply();
       const viewport = section.closest(".knowledge-board-scroll");
       drag = {
         x: e.clientX,
@@ -477,9 +482,9 @@ function boardContent(b, list, owner) {
     handle.onpointermove = (e) => {
       if (!drag) return;
       const dx =
-          e.clientX - drag.x + (drag.viewport?.scrollLeft || 0) - drag.scrollX,
+          (e.clientX - drag.x + (drag.viewport?.scrollLeft || 0) - drag.scrollX)/boardView(owner.id).scale,
         dy =
-          e.clientY - drag.y + (drag.viewport?.scrollTop || 0) - drag.scrollY;
+          (e.clientY - drag.y + (drag.viewport?.scrollTop || 0) - drag.scrollY)/boardView(owner.id).scale;
       if (resizing) {
         layout.width = clamp(
           drag.start.width + dx,
@@ -501,6 +506,7 @@ function boardContent(b, list, owner) {
       if (surface) {
         surface.style.width = owner.board.width + "px";
         surface.style.height = owner.board.height + "px";
+        boardScaleSurface(drag.viewport,surface,owner);
       }
     };
     handle.onpointerup = () => {
@@ -610,6 +616,7 @@ function renderBoard(b, list) {
   });
   section.append(headings);
   const viewport = el("div", { class: "knowledge-board-scroll" });
+  const view=boardView(b.id);
   const surface = el("div", {
     class: "knowledge-board-surface",
     style: "width:" + b.board.width + "px;height:" + b.board.height + "px",
@@ -649,8 +656,8 @@ function renderBoard(b, list) {
       if (!files.length) return;
       const rect = surface.getBoundingClientRect();
       const point = {
-        x: Math.max(0, e.clientX - rect.left),
-        y: Math.max(0, e.clientY - rect.top),
+        x: Math.max(0, (e.clientX - rect.left)/view.scale),
+        y: Math.max(0, (e.clientY - rect.top)/view.scale),
       };
       let added = 0;
       const errors = [];
@@ -676,8 +683,11 @@ function renderBoard(b, list) {
       );
     };
   }
-  viewport.append(surface);
+  const stage=el("div",{class:"board-stage"});stage.append(surface);viewport.append(stage);
+  if(editing)boardScaleSurface(viewport,surface,b);
   section.append(viewport);
+  requestAnimationFrame(()=>{viewport.scrollLeft=view.left;viewport.scrollTop=view.top;});
+  viewport.addEventListener("scroll",()=>{view.left=viewport.scrollLeft;view.top=viewport.scrollTop;});
   return section;
 }
 renderBlock = function (b, list) {
@@ -707,3 +717,14 @@ render = function () {
     blocks.append(button("＋ 新知识块",boardAddKnowledge,"new-board-entry"));
   }
 };
+
+function boardScaleSurface(viewport,surface,board){
+  if(!viewport||!editing)return;
+  const scale=boardView(board.id).scale;
+  surface.style.transform="scale("+scale+")";
+  surface.style.transformOrigin="top left";
+  const stage=surface.parentElement;
+  if(stage?.classList.contains("board-stage")){
+    stage.style.width=board.board.width*scale+"px";stage.style.height=board.board.height*scale+"px";
+  }
+}
