@@ -2,7 +2,6 @@
  * 音乐学习库主程序。
  * 负责：页面导航、文字与鼓模块、浏览器保存、备份、GitHub 同步。
  * MIDI 网格与导出逻辑在 midi.js；两者使用同一份知识页数据。
- * 无需构建工具，上传这些静态文件即可使用。
  */
 "use strict";
 const $ = (id) => document.getElementById(id),
