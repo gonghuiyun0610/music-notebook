@@ -111,13 +111,22 @@ async function midiImport(b, f) {
   } catch (e) { status("导入失败：" + e.message); }
 }
 
-/** Canvas 编辑器：只绘制八小节窗口，长序列不生成海量 DOM。
+/** Canvas 编辑器：只绘制四小节窗口，长序列不生成海量 DOM。
  * 音符主体拖动移动；Alt/Option 复制；Ctrl/Command 纵向拖动力度。
  * 空白拖绘时值，边缘拉伸，Shift 点击多选，框选工具支持组编辑。
  */
 function midiRender(card, b) {
   repairBlock(b); const v = stateFor(b); activeBlock ||= b;
-  transportControls(card, b);
+  v.loop = true;
+  if (!v.noteSelection) { v.loopA = 0; v.loopB = b.bars * meterSteps(b); }
+  v.left = clamp(v.left, 0, Math.max(0,b.bars + (editing ? 4 : 0) - 4));
+  const controls = el("div", {class:"controls drum-simple-controls"});
+  const play = button("▶ 播放", () => togglePlayback(b), "primary"); play.dataset.play = b.id;
+  controls.append(play, numberControl("BPM",b.bpm,20,300,n => {stop();b.bpm=n;changed();}), choice("拍号",b.meter,["4/4","3/4","6/4","6/8"].map(m => [m,m]),m => {
+    stop(); b.meter=m; b.bars=Math.max(b.bars,Math.ceil(Math.max(1,...b.notes.map(n=>n.start+n.duration))/meterSteps(b)));
+    v.noteSelection=null;v.loopA=0;v.loopB=b.bars*meterSteps(b);v.cursor=0;redraw();
+  }));
+  card.append(controls);
   const extras = el("div", { class: "midi-options" });
   const file = el("input", { type: "file", accept: ".mid,.midi,audio/midi", hidden: "", onchange: e => midiImport(b, e.target.files[0]) });
   if (editing) extras.append(button("导入 .mid", () => file.click()), file);
@@ -128,16 +137,27 @@ function midiRender(card, b) {
     const name = prompt("示例名称", blockTitle(b)); if (!name?.trim()) return;
     data.presets.push({ id: uid(), name: name.trim(), bpm: b.bpm, meter: b.meter, bars: b.bars, notes: clone(b.notes) }); changed(); status("已保存示例：" + name);
   }), button("选择示例", () => midiPresets(b)), choice("编辑工具", v.tool || "draw", [["draw", "画音符"], ["select", "框选"]], s => v.tool = s), button("删除选中", () => { const selected = selectedNotes.get(b.id) || new Set(); b.notes = b.notes.filter(n => !selected.has(n.id)); selected.clear(); changed(); paint(); }));
-  card.append(extras);
+  if (editing) {
+    const settings = el("details", {class:"midi-settings"}, [el("summary",{text:"管理音符"}),extras]);
+    card.append(settings);
+  }
   const wrap = el("div", { class: "midi-canvas-wrap" });
-  const canvas = el("canvas", { class: "midi-canvas", "aria-label": "MIDI 钢琴卷帘：八小节窗口", tabindex: "0" }); canvas.dataset.midiCanvas = b.id;
-  const hint = el("div", { class: "hint", text: "空白拖绘音符 · 拖主体移动 · 拖右边缘改长度 · Alt/Option＋拖动复制 · Ctrl/Command＋上下拖动力度 · Shift 点击多选 · Shift 拖标尺设循环 · 空格播放 / 暂停" });
+  const canvas = el("canvas", { class: "midi-canvas", "aria-label": "MIDI 钢琴卷帘：四小节窗口", tabindex: "0" }); canvas.dataset.midiCanvas = b.id;
+  const hint = el("div", { class: "hint", text: "点击音名切换静音 · 空白拖绘音符 · 拖主体移动 · 拖右边缘改长度 · Alt/Option＋拖动复制 · Ctrl/Command＋上下拖动力度 · Shift 点击多选 · 框选顶部小节块设循环 · 空格播放 / 暂停" });
   wrap.append(canvas); card.append(wrap, hint);
+  const scroller = el("div", {class:"drum-time-scroll",tabindex:"0","aria-label":"音符时间轴水平滚动条"});
+  const spacer = el("div", {class:"drum-time-spacer"}); scroller.append(spacer);card.append(scroller);
+  function syncScroll() {
+    const plot=w-keyW; scroller.style.marginLeft=keyW+"px";scroller.style.width=plot+"px";
+    spacer.style.width=plot*(1+Math.max(0,b.bars+(editing?4:0)-4)/4)+"px";
+    const left=v.left/4*plot;if(Math.abs(scroller.scrollLeft-left)>.5)scroller.scrollLeft=left;
+  }
+  scroller.onscroll=()=>{v.left=clamp(scroller.scrollLeft/(w-keyW)*4,0,Math.max(0,b.bars+(editing?4:0)-4));paint();};
   let w = 900; const h = 560, keyW = 52, top = 65, rowH = 19, rows = 25;
   let drag = null, ghost = [], selectionRect = null;
   const selected = selectedNotes.get(b.id) || new Set(); selectedNotes.set(b.id, selected);
   const low = () => clamp((b.octave + 1) * 12, 0, 103);
-  const visibleSteps = () => meterSteps(b) * 8;
+  const visibleSteps = () => meterSteps(b) * 4;
   const cellW = () => (w - keyW) / visibleSteps();
   const first = () => v.left * meterSteps(b);
   function coords(e) {
@@ -148,16 +168,21 @@ function midiRender(card, b) {
   function hit(c) { return [...b.notes].reverse().find(n => { const r = noteRect(n); return c.x >= r.x && c.x <= r.x + r.width && c.y >= r.y && c.y <= r.y + r.height; }); }
   function snap(s) { return Math.round(s / b.snap) * b.snap; }
   function paint() {
+    if (transport?.id === b.id && (v.cursor < first() || v.cursor >= first()+visibleSteps())) {v.left=clamp(Math.floor(v.cursor/meterSteps(b)/4)*4,0,Math.max(0,b.bars-4));syncScroll();}
     const c = canvas.getContext("2d"); c.clearRect(0, 0, w, h); c.fillStyle = "#fafbf7"; c.fillRect(0, 0, w, h);
     const steps = meterSteps(b); const cell = cellW();
     for (let r = 0; r < rows; r++) {
       const pitch = low() + rows - 1 - r; const y = top + r * rowH;
       c.fillStyle = [1, 3, 6, 8, 10].includes(pitch % 12) ? "#edf0e9" : "#fafbf7"; c.fillRect(keyW, y, w - keyW, rowH);
-      c.fillStyle = "#ffffff"; c.fillRect(0, y, keyW - 1, rowH); c.fillStyle = "#53695f"; c.font = "11px sans-serif"; c.fillText(midiPitch(pitch), 5, y + 13);
+      c.fillStyle = "#ffffff"; c.fillRect(0, y, keyW - 1, rowH); c.fillStyle = "#53695f"; c.font = "11px sans-serif"; c.fillStyle=(b.mutedPitches || []).includes(pitch) ? "#adb5ad" : "#53695f"; c.fillText(midiPitch(pitch), 5, y + 13);
       c.strokeStyle = "#e4e9df"; c.beginPath(); c.moveTo(0, y + rowH); c.lineTo(w, y + rowH); c.stroke();
     }
     c.fillStyle = "#edf3e8"; c.fillRect(keyW, 0, w - keyW, top);
-    if (v.loop) {
+    for(let bar=Math.floor(v.left);bar<Math.ceil(v.left+4);bar++){
+      const x=keyW+(bar*steps-first())*cell;
+      c.fillStyle="#e6eee7";c.fillRect(Math.max(keyW,x+1),2,Math.max(0,Math.min(w,x+steps*cell-1)-Math.max(keyW,x+1)),26);
+    }
+    if (v.noteSelection || drag?.mode === "loop") {
       const loopLeft = clamp(keyW + (v.loopA - first()) * cell, keyW, w);
       const loopRight = clamp(keyW + (v.loopB - first()) * cell, keyW, w);
       c.fillStyle = "#d4e4cd"; c.fillRect(loopLeft, 0, Math.max(0, loopRight - loopLeft), 22);
@@ -188,23 +213,26 @@ function midiRender(card, b) {
     c.restore();
     const cursorX = keyW + (v.cursor - first()) * cell;
     if (cursorX >= keyW && cursorX <= w) { c.strokeStyle = "#7caf97"; c.lineWidth = 2; c.beginPath(); c.moveTo(cursorX, top); c.lineTo(cursorX, top + rows * rowH); c.stroke(); }
-    c.fillStyle = "#587361"; c.font = "12px sans-serif"; c.fillText("音符 " + b.notes.length + " · 可见八小节 · 起点 " + (Math.floor(v.start / steps) + 1), 10, h - 4);
+    c.fillStyle = "#587361"; c.font = "12px sans-serif"; c.fillText("音符 " + b.notes.length + " · 可见四小节 · 起点 " + (Math.floor(v.start / steps) + 1), 10, h - 4);
     if (drag?.mode === "velocity" && ghost.length) { c.fillStyle = "#285d49"; c.fillText("力度 " + ghost[0].velocity, clamp(drag.last.x, 0, w - 90), clamp(drag.last.y - 10, 20, h - 10)); }
   }
   canvas.paint = paint;
   const observer = new ResizeObserver(() => {
-    w = Math.max(720, Math.round(wrap.clientWidth)); const dpr = window.devicePixelRatio || 1;
-    canvas.width = w * dpr; canvas.height = h * dpr; canvas.style.width = w + "px"; canvas.style.height = h + "px"; canvas.getContext("2d").setTransform(dpr, 0, 0, dpr, 0, 0); paint();
+    w = Math.max(320, Math.round(wrap.clientWidth)); const dpr = window.devicePixelRatio || 1;
+    canvas.width = w * dpr; canvas.height = h * dpr; canvas.style.width = w + "px"; canvas.style.height = h + "px"; canvas.getContext("2d").setTransform(dpr, 0, 0, dpr, 0, 0); syncScroll(); paint();
   }); observer.observe(wrap);
   const cleanup = new MutationObserver(() => { if (!canvas.isConnected) { observer.disconnect(); cleanup.disconnect(); } }); cleanup.observe($("blocks"), { childList: true, subtree: true });
   canvas.onpointerdown = e => {
     activeBlock = b; canvas.focus(); const c = coords(e); e.preventDefault(); canvas.setPointerCapture(e.pointerId);
+    if(c.x<keyW && c.y>=top && c.y<top+rows*rowH){
+      b.mutedPitches ||= []; b.mutedPitches=b.mutedPitches.includes(c.pitch) ? b.mutedPitches.filter(p=>p!==c.pitch) : [...b.mutedPitches,c.pitch];changed();paint();return;
+    }
     if (c.y < top && c.x >= keyW) {
       stop();
-      if (e.shiftKey) {
-        drag = { mode: "loop", c }; v.loop = true;
-        v.loopA = clamp(snap(c.step), 0, b.bars * meterSteps(b) - b.snap);
-        v.loopB = v.loopA + b.snap; paint(); return;
+      if (c.y < 28) {
+        const bar=clamp(Math.floor(c.step/meterSteps(b)),0,b.bars-1);
+        drag={mode:"loop",c,bar,previous:v.noteSelection ? {...v.noteSelection} : null};
+        v.loopA=bar*meterSteps(b);v.loopB=(bar+1)*meterSteps(b);paint();return;
       }
       v.start = clamp(v.origin === "bar" ? Math.floor(c.step / meterSteps(b)) * meterSteps(b) : Math.max(0, snap(c.step)), 0, b.bars * meterSteps(b) - b.snap);
       v.cursor = v.start; changed(); paint(); return;
@@ -231,12 +259,11 @@ function midiRender(card, b) {
     if (!drag) { canvas.style.cursor = v.hand ? "grab" : hit(c) ? e.altKey ? "copy" : (e.ctrlKey || e.metaKey) ? "ns-resize" : "move" : "crosshair"; return; }
     drag.last = c;
     if (drag.mode === "loop") {
-      const max = b.bars * meterSteps(b);
-      v.loopA = clamp(Math.min(snap(drag.c.step), snap(c.step)), 0, max - b.snap);
-      v.loopB = clamp(Math.max(snap(drag.c.step), snap(c.step)) + b.snap, v.loopA + b.snap, max);
-      paint(); return;
+      const bar=clamp(Math.floor(c.step/meterSteps(b)),0,b.bars-1);
+      v.loopA=Math.min(drag.bar,bar)*meterSteps(b);
+      v.loopB=(Math.max(drag.bar,bar)+1)*meterSteps(b);paint();return;
     }
-    if (drag.mode === "pan") { v.left = clamp(drag.left - (c.x - drag.c.x) / (w - keyW) * 8, 0, Math.max(0, b.bars - 8)); paint(); return; }
+    if (drag.mode === "pan") { v.left = clamp(drag.left - (c.x - drag.c.x) / (w - keyW) * 4, 0, Math.max(0, b.bars - 4)); paint(); return; }
     if (drag.mode === "select") {
       selectionRect = { x: Math.min(c.x, drag.c.x), y: Math.min(c.y, drag.c.y), width: Math.abs(c.x - drag.c.x), height: Math.abs(c.y - drag.c.y) }; paint(); return;
     }
@@ -261,17 +288,20 @@ function midiRender(card, b) {
     } else if (drag.mode === "pan") {
       panStart(b, v); changed();
     } else if (drag.mode === "loop") {
+      const same=drag.previous && drag.previous.a===v.loopA && drag.previous.b===v.loopB;
+      v.noteSelection=same ? null : {a:v.loopA,b:v.loopB};
+      if(same){v.loopA=0;v.loopB=b.bars*meterSteps(b);}
       v.start = v.loopA; v.cursor = v.loopA; changed();
     } else {
       if (["move", "resize", "velocity"].includes(drag.mode)) b.notes = b.notes.filter(n => !drag.original.includes(n.id));
       b.notes.push(...ghost); selected.clear(); ghost.forEach(n => selected.add(n.id));
-      b.bars = Math.max(b.bars, Math.ceil(Math.max(1, ...b.notes.map(n => n.start + n.duration)) / meterSteps(b))); v.loopB = Math.max(v.loopB, b.bars * meterSteps(b)); changed();
+      b.bars = Math.max(b.bars, Math.ceil(Math.max(1, ...b.notes.map(n => n.start + n.duration)) / meterSteps(b))); if (!v.noteSelection) v.loopB = b.bars * meterSteps(b); syncScroll(); changed();
     }
     ghost = []; drag = null; selectionRect = null; canvas.style.cursor = v.hand ? "grab" : "crosshair"; paint();
   };
-  canvas.onpointercancel = () => { drag = null; ghost = []; selectionRect = null; paint(); };
+  canvas.onpointercancel = () => { if(drag?.mode === "loop"){v.noteSelection=drag.previous;v.loopA=drag.previous?.a || 0;v.loopB=drag.previous?.b || b.bars*meterSteps(b);} drag = null; ghost = []; selectionRect = null; paint(); };
   canvas.ondblclick = e => { if (!editing) return; const n = hit(coords(e)); if (n) { b.notes = b.notes.filter(x => x !== n); changed(); paint(); } };
-  canvas.onkeydown = e => { if (["Delete", "Backspace"].includes(e.key) && editing) { e.preventDefault(); b.notes = b.notes.filter(n => !selected.has(n.id)); selected.clear(); changed(); paint(); } };
+  canvas.onkeydown = e => { if(e.key === "Escape"){stop();v.noteSelection=null;v.loopA=0;v.loopB=b.bars*meterSteps(b);v.start=0;v.cursor=0;paint();} if (["Delete", "Backspace"].includes(e.key) && editing) { e.preventDefault(); b.notes = b.notes.filter(n => !selected.has(n.id)); selected.clear(); changed(); paint(); } };
 }
 function midiPitch(p) {
   return (

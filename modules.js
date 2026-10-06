@@ -1216,7 +1216,7 @@ async function togglePlayback(b) {
     if (b.type === "midi") {
       // 从暂停位置继续时，恢复跨越起点的长音。
       for (const n of b.notes)
-        if (n.start < from && n.start + n.duration > from)
+        if (!(b.mutedPitches || []).includes(n.pitch) && n.start < from && n.start + n.duration > from)
           midiSound(
             n,
             tr.started,
@@ -1235,6 +1235,7 @@ async function togglePlayback(b) {
           for (const n of b.notes) {
             const at = nextTime + (n.start - nextStep) * tr.seconds;
             if (
+              !(b.mutedPitches || []).includes(n.pitch) &&
               n.start >= nextStep &&
               n.start < nextStep + 1 &&
               n.start < end &&
