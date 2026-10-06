@@ -245,9 +245,9 @@ function midiRender(card, b) {
     c.restore();c.save();c.beginPath();c.rect(keyW,top,w-keyW,rows*rowH);c.clip();
     for(const n of [...b.notes,...ghost]){
       if(b.notes.includes(n)&&drag?.original?.includes(n.id)&&["move","resize","velocity"].includes(drag.mode))continue;
-      const r=noteRect(n);c.fillStyle=n.muted?"#b4bcb2":selected.has(n.id)?"#bd8e4c":"rgba(45,119,93,"+(.35+n.velocity/127*.65)+")";
+      const r=noteRect(n);c.fillStyle=n.muted?"#b4bcb2":selected.has(n.id)?"#bd8e4c":"#648f83";
       c.fillRect(r.x,r.y,Math.max(2,r.width-1),r.height);
-      if(selected.has(n.id)){c.strokeStyle="#805b21";c.lineWidth=2;c.strokeRect(r.x,r.y,Math.max(2,r.width-1),r.height);}
+      if(selected.has(n.id)){c.strokeStyle="#987342";c.lineWidth=1;c.strokeRect(r.x,r.y,Math.max(2,r.width-1),r.height);}
     }
     if(selectionRect){c.fillStyle="#b3cfc440";c.fillRect(selectionRect.x,selectionRect.y,selectionRect.width,selectionRect.height);c.strokeStyle="#649f88";c.strokeRect(selectionRect.x,selectionRect.y,selectionRect.width,selectionRect.height);}
     c.restore();showPosition(v.cursor,false);

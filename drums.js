@@ -30,6 +30,23 @@ Object.assign(DRUMS, {
   rideEdge: "叮叮镲 · 边缘",
 });
 
+const DRUM_COLORS={
+  kick:"#5d8fc7",kickSoft:"#9ebada",kickDeep:"#3c6292",kickTight:"#779bc9",
+  snare:"#9f78b8",snareGhost:"#c5b1d4",snareRimshot:"#79578c",snareBrush:"#b399c5",rim:"#ab8cbe",cross:"#baa2ca",
+  hihat:"#c39a43",openhat:"#d4b567",pedal:"#af862e",
+  tomHigh:"#79aaa2",tomMid:"#5f978d",tomLow:"#467e75",
+  crash:"#c88572",crashChoke:"#ad6b5d",ride:"#768898",bell:"#566a7b",rideEdge:"#98a8b5"
+};
+function drumFamily(key){
+  if(key.startsWith("kick"))return "底鼓";
+  if(key.startsWith("snare")||["rim","cross"].includes(key))return "军鼓";
+  if(["hihat","openhat","pedal"].includes(key))return "踩镲";
+  if(key.startsWith("tom"))return "通鼓";
+  if(key.startsWith("crash"))return "吊镲";
+  return "叮叮镲";
+}
+function drumColor(key){return DRUM_COLORS[key]||"#789589";}
+
 function drumEnsureTracks(b) {
   const size = b.bars * meterSteps(b);
   b.snap = [4,2,1,.5].includes(b.snap) ? b.snap : 1;
@@ -56,7 +73,10 @@ drumParts = function (b) {
       text: "选择显示的部件；取消显示保留原鼓点。静音请直接点击轨道名称。",
     }),
   ]);
+  let lastFamily="";
   for (const [key, name] of Object.entries(DRUMS)) {
+    const family=drumFamily(key);
+    if(family!==lastFamily){const heading=el("h3",{text:family});heading.style.color=drumColor(key);dialog.append(heading);lastFamily=family;}
     const show = el("input", {
       type: "checkbox",
       "aria-label": "显示 " + name,
@@ -343,9 +363,9 @@ rhythm = function (card, b) {
     const c = canvas.getContext("2d");
     if (!c) return;
     c.clearRect(0, 0, width, height);
-    c.fillStyle = "#fafbf8";
+    c.fillStyle = "#fbfcfd";
     c.fillRect(0, 0, width, height);
-    c.fillStyle = "#f4f7f1";
+    c.fillStyle = "#f5f7fa";
     c.fillRect(0, 0, labelW, height);
     c.save();
     c.beginPath();
@@ -369,9 +389,9 @@ rhythm = function (card, b) {
     }
     for (let r = 0; r < Math.max(1, b.visible.length); r++) {
       const y = top + r * rowH;
-      c.fillStyle = r % 2 ? "#f0f4ed" : "#fafbf8";
+      c.fillStyle = r % 2 ? "#f4f7f9" : "#fbfcfd";
       c.fillRect(labelW, y, width - labelW, rowH);
-      c.strokeStyle = "#dfe6dc";
+      c.strokeStyle = "#e2e8ed";
       c.beginPath();
       c.moveTo(labelW, y + rowH);
       c.lineTo(width, y + rowH);
@@ -381,7 +401,7 @@ rhythm = function (card, b) {
     for (let s = Math.ceil(first()/b.snap)*b.snap; s <= first()+count; s+=b.snap) {
       const x = labelW + (s - first()) * cellW();
       c.strokeStyle =
-        s % steps === 0 ? "#8ba494" : s % unit === 0 ? "#c6d2c5" : "#e1e8dc";
+        s % steps === 0 ? "#8ba494" : s % unit === 0 ? "#c6d2c5" : "#e7ecf1";
       c.lineWidth = s % steps === 0 ? 1.2 : 0.5;
       c.beginPath();
       c.moveTo(x, 32);
@@ -407,7 +427,7 @@ rhythm = function (card, b) {
             drag.from === s)
         )
           continue;
-        c.fillStyle = b.muted.includes(key) ? "#b0b9ae" : "#547e6c";
+        c.fillStyle = b.muted.includes(key) ? "#b8c2c9" : drumColor(key);
         c.fillRect(
           labelW + (s - first()) * cellW() + 2,
           top + row * rowH + 9,
@@ -417,7 +437,7 @@ rhythm = function (card, b) {
       }
     });
     if (drag?.kind === "note" && drag.moved) {
-      c.fillStyle = drumHitAt(b,drag.key,drag.to) ? "#bd7970" : "#c8a25d";
+      c.fillStyle = drumHitAt(b,drag.key,drag.to) ? "#c07b73" : drumColor(drag.key);
       c.fillRect(
         labelW + (drag.to - first()) * cellW() + 2,
         top + drag.row * rowH + 8,
@@ -475,6 +495,7 @@ rhythm = function (card, b) {
       },
       "drum-name",
     );
+    name.style.color=drumColor(key);
     name.style.top = top + row * rowH + "px";
     name.style.height = rowH + "px";
     name.classList.toggle("muted-track", b.muted.includes(key));

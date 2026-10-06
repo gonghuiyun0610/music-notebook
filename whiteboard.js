@@ -14,7 +14,7 @@ const BOARD_TYPES = [
   ["audio", "音频"],
 ];
 const BOARD_DEFAULTS = {
-  text: { width: 440, height: 280 },
+  text: { width: 620, height: 540 },
   rhythm: { width: 1050, height: 460 },
   midi: { width: 1050, height: 830 },
   image: { width: 460, height: 460 },
@@ -196,7 +196,7 @@ function boardMenu(b, list) {
     [
       "删除",
       () => {
-        if (confirm("删除这个知识块及其内容？")) list.splice(index, 1);
+        removeKnowledgeItem(b.id);
       },
     ],
   ])
@@ -207,7 +207,6 @@ function boardMenu(b, list) {
         redraw();
       }),
     );
-  d.append(button("关闭", () => d.close()));
   d.onclose = () => d.remove();
   document.body.append(d);
   d.showModal();
@@ -270,6 +269,7 @@ function boardActivate(id) {
     const active = editing && section.dataset.contentId === id;
     section.classList.toggle("content-active", active);
     section.querySelectorAll("textarea").forEach(input => input.readOnly = !active);
+    section.querySelectorAll(".rich-editor").forEach(input => input.contentEditable = String(active));
   });
 }
 function boardAddPart(board, type) {
@@ -293,6 +293,16 @@ contentMenu = function(list) {
 };
 function boardLocalTools(board, list) {
   const tools = el("div", {class:"board-local-tools"});
+  tools.style.top=(board.toolY ?? 72)+"px";
+  const grip=button("⠿",()=>{},"board-tools-grip");
+  grip.setAttribute("aria-label","上下移动添加与知识块操作按钮");
+  tools.append(grip);
+  let moving=null;
+  grip.onpointerdown=e=>{if(e.button!==undefined&&e.button!==0)return;e.preventDefault();moving={y:e.clientY,start:board.toolY ?? 72};grip.setPointerCapture?.(e.pointerId);};
+  grip.onpointermove=e=>{if(!moving)return;const height=tools.closest(".knowledge-board")?.clientHeight || 1000;board.toolY=clamp(moving.start+e.clientY-moving.y,52,Math.max(52,height-130));tools.style.top=board.toolY+"px";};
+  grip.onpointerup=()=>{if(moving){moving=null;changed();}};
+  grip.onpointercancel=()=>{if(moving){board.toolY=moving.start;tools.style.top=board.toolY+"px";moving=null;}};
+  grip.onkeydown=e=>{if(!["ArrowUp","ArrowDown"].includes(e.key))return;e.preventDefault();const height=tools.closest(".knowledge-board")?.clientHeight || 1000;board.toolY=clamp((board.toolY ?? 72)+(e.key==="ArrowDown"?20:-20),52,Math.max(52,height-130));tools.style.top=board.toolY+"px";changed();};
   const menu = el("details", {class:"board-add-menu"});
   menu.append(el("summary", {text:"＋", "aria-label":"添加白板部件"}));
   const panel = el("div", {class:"board-add-options"});
@@ -398,13 +408,10 @@ function boardContent(b, list, owner) {
             redraw();
           }),
           button("删除", () => {
-            if (confirm("删除这个内容块？")) {
-              list.splice(list.indexOf(b), 1);
-              d.close();
-              redraw();
-            }
+            d.close();
+            removeKnowledgeItem(b.id);
+            redraw();
           }),
-          button("关闭", () => d.close()),
         );
         d.onclose = () => d.remove();
         document.body.append(d);
@@ -417,22 +424,7 @@ function boardContent(b, list, owner) {
   const body = el("div", {
     class: "whiteboard-content-body module-body " + b.type,
   });
-  if (b.type === "text")
-    body.append(
-      editing
-        ? el(
-            "textarea",
-            {
-              "aria-label": "文字内容",
-              oninput: (e) => {
-                b.content = e.target.value;
-                changed();
-              },
-            },
-            [document.createTextNode(b.content)],
-          )
-        : el("div", { class: "prose", text: b.content }),
-    );
+  if (b.type === "text") renderRichText(body,b);
   else if (b.type === "rhythm") rhythm(body, b);
   else if (b.type === "midi") midiRender(body, b);
   else if (["image", "audio"].includes(b.type)) media(body, b);
@@ -557,7 +549,7 @@ function renderBoard(b, list) {
   boardEnsure(b);
   const section = el("section", {
     id: "block-" + b.id,
-    class: "block knowledge-board",
+    class: "block knowledge-board " + (editing ? "board-editing" : "board-reading"),
   });
   const titleRow = el("div", { class: "knowledge-board-title" });
   const title = el("h2", {text:b.title, class:"board-name", "aria-label":"白板名称"});
@@ -623,9 +615,8 @@ function renderBoard(b, list) {
     style: "width:" + b.board.width + "px;height:" + b.board.height + "px",
   });
   surface.dataset.knowledgeId = b.id;
-  b.children.forEach((child) =>
-    surface.append(boardContent(child, b.children, b)),
-  );
+  const ordered = editing ? b.children : [...b.children].sort((a,c)=>a.layout.y-c.layout.y || a.layout.x-c.layout.x);
+  ordered.forEach(child=>surface.append(boardContent(child,b.children,b)));
   if (!b.children.length)
     surface.append(
       el("p", {
@@ -713,9 +704,6 @@ render = function () {
   document.getElementById("board-editor-rail")?.remove();
   if(editing && !practiceHome) {
     const blocks=$("blocks");
-    const roots=[...blocks.children].filter(section=>section.classList.contains("knowledge-board"));
-    const addBoard=afterId=>{const b=createBlock("group");const index=page().blocks.findIndex(item=>"block-"+item.id===afterId);page().blocks.splice(index<0?page().blocks.length:index+1,0,b);boardSelectedKnowledge=b.id;redraw();};
-    if(!roots.length)blocks.append(button("＋ 新知识块",()=>addBoard(),"new-board-entry"));
-    roots.forEach(section=>section.after(button("＋ 新知识块",()=>addBoard(section.id),"new-board-entry")));
+    blocks.append(button("＋ 新知识块",boardAddKnowledge,"new-board-entry"));
   }
 };

@@ -31,7 +31,7 @@ aside {
 }
 .brand {
   font-size: 21px;
-  font-weight: 750;
+  font-weight: 500;
   text-decoration: none;
   color: var(--ink);
 }
@@ -127,7 +127,7 @@ nav button {
 }
 nav button.selected {
   background: #dae7db;
-  font-weight: 650;
+  font-weight: 500;
 }
 #newPage {
   width: 100%;
@@ -219,7 +219,7 @@ h2 {
 }
 .track {
   font-size: 12px;
-  font-weight: 600;
+  font-weight: 500;
 }
 .step {
   height: 31px;
@@ -462,7 +462,7 @@ audio {
   background: #e0e5df;
 }
 .piano-key.root {
-  font-weight: 700;
+  font-weight: 500;
   color: var(--accent);
 }
 .piano-cell {
@@ -516,7 +516,7 @@ nav,
 .nav-group > summary {
   padding: 9px 3px;
   cursor: pointer;
-  font-weight: 650;
+  font-weight: 500;
 }
 .nav-chapter,
 .nav-block {
@@ -553,13 +553,13 @@ nav,
 .module-heading > input {
   flex: 1;
   min-width: 130px;
-  font-weight: 650;
+  font-weight: 500;
 }
 .heading-title {
   border: 0;
   background: transparent;
   font-size: 20px;
-  font-weight: 650;
+  font-weight: 500;
   text-align: left;
   flex: 1;
 }
@@ -690,7 +690,7 @@ nav,
   text-align: center;
   color: var(--accent);
   font-size: 13px;
-  font-weight: 650;
+  font-weight: 500;
   background: #edf3e7;
 }
 .beat-label {
@@ -704,11 +704,11 @@ nav,
 .beat-label.strong {
   color: #356655;
   font-size: 11px;
-  font-weight: 700;
+  font-weight: 500;
 }
 .beat-label.and {
   color: #66845c;
-  font-weight: 600;
+  font-weight: 500;
 }
 .step.bar-start {
   border-left: 2px solid #91aa93;
@@ -834,7 +834,7 @@ nav,
 }
 .practice-column summary {
   cursor: pointer;
-  font-weight: 600;
+  font-weight: 500;
   padding: 6px 0;
 }
 
@@ -981,7 +981,7 @@ nav,
 .knowledge-board-title input {
   flex: 1;
   font-size: 24px;
-  font-weight: 650;
+  font-weight: 500;
   min-width: 0;
 }
 .board-practice-actions {
@@ -1178,3 +1178,88 @@ aside{overflow-y:auto}
 @media(max-width:640px){.knowledge-board{padding-left:45px}.board-local-tools{left:4px}.board-add-menu>summary{width:34px;height:34px}.board-add-options{left:36px}.midi-options{flex-wrap:wrap}}
 .playhead-seek-handle{position:absolute;top:31px;width:16px;height:25px;padding:0;border:0;background:transparent;color:#9c584e;z-index:4;touch-action:none;cursor:ew-resize;font-size:14px}
 .playhead-seek-handle[hidden]{display:none}
+/* 扁平工作台 */
+:root{--ink:#344054;--accent:#517d73;--paper:#f8fafb;--line:#e4e9ed;--muted:#798691}
+body{font-family:system-ui,-apple-system,"Segoe UI","Microsoft YaHei","PingFang SC",sans-serif;font-weight:400;line-height:1.6}
+.brand{font-size:19px;font-weight:500}
+h1{font-size:30px;font-weight:500}h2{font-weight:500}h3,h4,h5,h6{font-weight:500}
+button,input,select,textarea{font-weight:400;box-shadow:none;border-radius:5px}
+button{background:#fff;border-color:#e4e9ed;font-size:13px}
+button.primary{background:#527e73;border-color:#527e73;color:#fff}
+button:hover{background:#edf3f2}
+button.primary:hover{background:#426e63}
+input,select,textarea{font-size:13px}
+aside{background:#f2f5f7;padding:28px 20px}
+main{padding:0 30px 40px;max-width:1600px}
+.page-head{padding:28px 0 18px}.page-head .eyebrow{display:none}
+.block.knowledge-board{border:1px solid #e3e9ed;border-radius:10px;background:#fff;box-shadow:none;padding:22px 20px 22px 62px;margin:20px 0}
+.knowledge-board-title h2{font-size:22px;font-weight:500;color:#344054}
+.knowledge-board-scroll{border-color:#e7ecef;border-radius:7px}
+.knowledge-board-surface{background-color:#f6f8fa;background-image:radial-gradient(#dbe3e8 1px,transparent 1px);background-size:24px 24px}
+.whiteboard-content{box-shadow:none;border-color:#dfe6eb;border-radius:7px}
+.whiteboard-content.content-active{border:1px solid #5d9288;box-shadow:0 0 0 2px #e2efeb}
+.whiteboard-content-head{background:#f5f7f9;border-bottom:1px solid #e7ecef;height:43px;font-weight:400}
+.whiteboard-content-head input{border:0;background:transparent;color:#42536a;font-size:13px;padding:4px 6px}
+.whiteboard-content-body{padding:14px}
+.content-drag-handle{font-size:20px;color:#8c9aa5}
+.content-resize-handle{background:transparent;color:#9aaab5}
+.board-local-tools{background:#f7fafb;border:1px solid #e4e9ed;border-radius:7px;padding:4px;left:10px;gap:4px;box-shadow:none}
+.board-tools-grip{padding:0;border:0;background:transparent;color:#a1adb6;cursor:ns-resize;touch-action:none;height:22px}
+.board-add-menu>summary{background:#eaf2ef;color:#50796e;border-radius:4px;font-size:21px;width:32px;height:32px}
+.board-options-button{height:30px;border:0;color:#6e7f8c}
+.board-add-options{background:#fff;border:1px solid #e1e8ec;border-radius:6px;box-shadow:0 4px 12px #34405412}
+.new-board-entry{color:#668379;border:1px dashed #d9e3df;border-radius:6px;background:#f9fbfa;padding:14px}
+.board-reading .knowledge-board-scroll{max-height:none;overflow:visible;border:0}
+.board-reading .knowledge-board-surface{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:18px;width:100%!important;height:auto!important;min-height:0;background:transparent}
+.board-reading .whiteboard-content{position:relative;left:auto!important;top:auto!important;width:100%!important;height:auto!important;min-width:0;align-self:start}
+.board-reading .whiteboard-content:has(.module-body.rhythm),.board-reading .whiteboard-content:has(.module-body.midi),.board-reading .whiteboard-content:has(.module-body.group){grid-column:1/-1}
+.board-reading .whiteboard-content-body{overflow:visible;min-height:80px}
+.board-reading .whiteboard-content-body img{max-height:420px;object-fit:contain}
+.board-reading .whiteboard-empty{position:relative;left:0;top:0}
+.controls{flex-wrap:wrap;font-size:12px;gap:10px}
+.controls input[type=number]{width:70px}
+.drum-roll-canvas{cursor:default}
+.drum-four-viewport,.midi-roll-viewport{border-radius:4px;box-shadow:none}
+.drum-name{font-family:inherit;font-weight:400;font-size:12px;border-left:3px solid currentColor}
+.drum-name.muted-track{color:#a4adb5!important;background:#f3f5f6;text-decoration:line-through}
+.note-inspector{background:#f7f6ef;border:0;border-radius:4px}
+.hint{color:#7a8792;font-size:11px}
+/* 目录不用三角，颜色和缩进表示层级 */
+#nav summary{list-style:none;cursor:pointer;font-weight:400}
+#nav summary::-webkit-details-marker{display:none}
+#nav summary::marker{content:""}
+#nav summary::before,#nav summary::after{content:none}
+#nav .nav-group>summary{color:#40536a;background:#e8eef3;padding:9px 10px;border-radius:4px;margin:8px 0;font-weight:500}
+#nav .nav-chapter>summary{color:#597a72;padding:8px 10px;background:transparent;border-radius:4px}
+#nav .nav-block>summary{color:#788896;padding:7px 10px;background:transparent;font-size:12px}
+#nav .nav-chapter,#nav .nav-block{padding-left:10px;border:0}
+#nav summary.selected{color:#456f64;background:#e4eee9}
+#nav .nav-region h3{color:#8494a2;font-size:12px;font-weight:500;margin:22px 0 8px}
+.search-modes{display:flex;gap:4px;margin:10px 0 14px}
+.search-modes button{flex:1;border:0;background:transparent;color:#82909c;padding:7px}
+.search-modes button[aria-pressed=true]{background:#e1ebe7;color:#42675b}
+.search-count{font-size:12px;color:#8694a0}
+.search-result{display:flex;flex-direction:column;text-align:left;gap:4px;width:100%;padding:10px 8px;border:0;background:transparent;margin:2px 0;color:#45566c}
+.search-result small{font-size:11px;color:#8a98a3;overflow-wrap:anywhere}
+.nav-add-page{background:transparent;border:0;color:#789085;width:100%;text-align:left}
+.undo-toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);z-index:100;display:flex;gap:18px;align-items:center;padding:12px 18px;border:1px solid #dae4e0;border-radius:6px;background:#fff;box-shadow:0 4px 18px #34405414;font-size:13px;max-width:calc(100% - 30px)}
+.undo-toast button{color:#4e7e6d;border:0;background:#edf4ef}
+dialog{border:1px solid #e1e8ec;border-radius:8px;box-shadow:0 6px 28px #34405420;padding:22px}
+dialog::backdrop{background:#34405420}
+/* 富文本 */
+.module-body.text{display:flex;flex-direction:column;gap:10px}
+.rich-toolbar{display:flex;flex-wrap:wrap;align-items:center;gap:5px;padding:8px;background:#f6f8fa;border-bottom:1px solid #e4e9ed;flex-shrink:0}
+.rich-toolbar button,.rich-toolbar label,.rich-toolbar select{font-size:11px}
+.rich-toolbar button{padding:4px 7px;background:transparent;border:1px solid transparent}
+.rich-toolbar button:hover{background:#e7eef1}
+.rich-toolbar label{display:flex;align-items:center;gap:4px;color:#7a8795}
+.rich-toolbar select{padding:3px;max-width:105px;background:#fff;border:1px solid #e3e9ed;border-radius:3px}
+.rich-toolbar input[type=color]{width:24px;height:24px;padding:2px;border:1px solid #e1e8ec}
+.rich-editor,.rich-reading{font-size:15px;overflow-wrap:anywhere;white-space:pre-wrap;min-height:100px}
+.rich-editor{flex:1;min-height:180px;padding:12px;background:#fff;outline:none;border:1px solid #e7ecef;border-radius:4px}
+.rich-editor[contenteditable=true]:focus{border-color:#93b3a6}
+.rich-editor p,.rich-editor div,.rich-reading p,.rich-reading div{margin:0 0 var(--paragraph-gap,8px)}
+.rich-editor h2,.rich-reading h2{font-size:24px}.rich-editor h3,.rich-reading h3{font-size:20px}.rich-editor h4,.rich-reading h4{font-size:17px}
+.rich-editor ul,.rich-editor ol,.rich-reading ul,.rich-reading ol{padding-left:24px;white-space:normal}
+@media(max-width:1000px){main{padding:0 20px 30px}.board-reading .knowledge-board-surface{grid-template-columns:minmax(0,1fr)}}
+@media(max-width:640px){main{margin-left:0;padding:0 12px 24px}aside{position:relative;width:100%;padding:16px}header{flex-wrap:wrap;padding:14px 0}.block.knowledge-board{padding:16px 10px 16px 50px}.board-reading{padding-left:12px!important}.board-local-tools{left:5px}.rich-toolbar{gap:4px}.whiteboard-content-body{padding:10px}h1{font-size:25px}}

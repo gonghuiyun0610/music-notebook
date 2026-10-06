@@ -4,21 +4,22 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width,initial-scale=1" />
     <title>Music Notebook · 音乐学习库</title>
-    <link rel="stylesheet" href="style.css?v=20261007-board-v7" />
+    <link rel="stylesheet" href="style.css?v=20261007-flat-v8" />
     <!-- 先加载 MIDI 模块，再加载主程序；defer 保证文档解析后按顺序执行。 -->
-    <script src="midi.js?v=20261007-board-v7" defer></script>
-    <script src="app.js?v=20261007-board-v7" defer></script>
-    <script src="modules.js?v=20261007-board-v7" defer></script>
-    <script src="drums.js?v=20261007-board-v7" defer></script>
-    <script src="whiteboard.js?v=20261007-board-v7" defer></script>
-    <script src="boot.js?v=20261007-board-v7" defer></script>
+    <script src="midi.js?v=20261007-flat-v8" defer></script>
+    <script src="app.js?v=20261007-flat-v8" defer></script>
+    <script src="modules.js?v=20261007-flat-v8" defer></script>
+    <script src="drums.js?v=20261007-flat-v8" defer></script>
+    <script src="whiteboard.js?v=20261007-flat-v8" defer></script>
+    <script src="workbench.js?v=20261007-flat-v8" defer></script>
+    <script src="boot.js?v=20261007-flat-v8" defer></script>
   </head>
   <body>
     <!-- 左侧知识目录 -->
     <aside>
       <a class="brand" href="./">♫ Music Notebook</a>
       <p class="muted">把听见的，变成自己的知识。</p>
-      <input id="search" placeholder="搜索知识点…" aria-label="搜索知识点" />
+      <input id="search" placeholder="搜索名称…" aria-label="搜索知识点" />
       <nav id="nav"></nav>
       <button id="newPage" hidden>＋ 新增知识页面</button>
       <div class="aside-foot">文字 · 节奏 · 练习<br />你的音乐学习工作台</div>
@@ -34,7 +35,6 @@
         </div>
       </header>
       <div class="page-head">
-        <span class="eyebrow">LEARN · LISTEN · CREATE · MIDI</span>
         <h1 id="title"></h1>
         <div id="meta"></div>
       </div>

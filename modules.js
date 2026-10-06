@@ -1508,27 +1508,6 @@ document
     (btn) => (btn.onclick = () => addTo(page().blocks, btn.dataset.add)),
   );
 $("newPage").hidden = true;
-document.querySelector("header .actions").prepend(
-  button("待复习库", () => {
-    const d = el("dialog", {}, [el("h2", { text: "待复习库" })]);
-    const found = allBlocks().filter((x) => x.b.review);
-    if (!found.length)
-      d.append(el("p", { text: "在知识块上点击加入待复习。" }));
-    found.forEach((x) =>
-      d.append(
-        button(x.p.title + " › " + blockTitle(x.b), () => {
-          d.close();
-          locate(x.p, x.b);
-        }),
-      ),
-    );
-    d.append(button("关闭", () => d.close()));
-    d.onclose = () => d.remove();
-    document.body.append(d);
-    d.showModal();
-  }),
-);
-
 // 完整备份包含本地媒体；导入到另一设备时重新写入 IndexedDB。
 function blobDataURL(blob) {
   return new Promise((resolve, reject) => {
