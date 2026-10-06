@@ -1,384 +1,285 @@
-/* 独立 MIDI 模块：4/4、十六分网格，兼容原有文字/鼓模块与 JSON 保存。 */
+/* MIDI 文件编解码与浏览器合成音色。 */
 "use strict";
 
-// 兼容此前误创建成素材样式的 MIDI 块：补齐缺失参数，保留原有音符。
-// 只修复缺少的字段；已经存在但不合法的值仍由 midiValidate 报错。
-function midiRepairLegacyBlock(block) {
-  const defaults = midiDefaults();
-  for (const [key, value] of Object.entries(defaults)) {
-    if (block[key] === undefined) block[key] = value;
-  }
+function midiDefaults() {
+  return { name: "我的 MIDI 织体", bpm: 90, bars: 8, meter: "4/4", octave: 3, snap: 1, notes: [] };
+}
+function midiRepairLegacyBlock(b) {
+  for (const [k, v] of Object.entries(midiDefaults())) if (b[k] === undefined) b[k] = v;
+}
+function midiValidate(b) {
+  if (!Array.isArray(b.notes) || b.notes.length > 100000 || !["4/4", "3/4", "6/4", "6/8"].includes(b.meter || "4/4")) throw Error("MIDI 数据不正确。");
+  if (!Number.isInteger(b.bars) || b.bars < 1 || b.bars > 4096 || !Number.isFinite(b.bpm) || b.bpm < 20 || b.bpm > 300) throw Error("MIDI 小节或 BPM 不正确。");
+  for (const n of b.notes) if (!Number.isInteger(n.pitch) || n.pitch < 0 || n.pitch > 127 || !Number.isFinite(n.start) || n.start < 0 || !Number.isFinite(n.duration) || n.duration <= 0 || n.start + n.duration > b.bars * meterSteps(b) + .01 || !Number.isInteger(n.velocity) || n.velocity < 1 || n.velocity > 127) throw Error("MIDI 音符越界或参数不正确。");
 }
 
-// 创建新的 MIDI 块。notes 保存音高、起点、时值和力度，单位为十六分网格。
-function midiDefaults() {
-  return {
-    name: "我的 MIDI 织体",
-    bpm: 90,
-    bars: 1,
-    octave: 3,
-    length: 4,
-    velocity: 90,
-    notes: [],
-  };
-}
-// 校验 MIDI 参数、循环边界和同音高重叠；允许不同音高同时发声。
-function midiValidate(b) {
-  if (
-    typeof b.name !== "string" ||
-    !Number.isFinite(b.bpm) ||
-    b.bpm < 40 ||
-    b.bpm > 220 ||
-    ![1, 2, 4].includes(b.bars) ||
-    !Number.isInteger(b.octave) ||
-    b.octave < 2 ||
-    b.octave > 5 ||
-    ![1, 2, 4, 8, 16].includes(b.length) ||
-    !Number.isInteger(b.velocity) ||
-    b.velocity < 1 ||
-    b.velocity > 127 ||
-    !Array.isArray(b.notes) ||
-    b.notes.length > 2048
-  )
-    throw Error("MIDI 模块参数不正确。");
-  for (const n of b.notes) {
-    if (
-      !Number.isInteger(n.pitch) ||
-      n.pitch < 36 ||
-      n.pitch > 96 ||
-      !Number.isInteger(n.start) ||
-      n.start < 0 ||
-      !Number.isInteger(n.duration) ||
-      n.duration < 1 ||
-      n.start + n.duration > b.bars * 16 ||
-      !Number.isInteger(n.velocity) ||
-      n.velocity < 1 ||
-      n.velocity > 127
-    )
-      throw Error("MIDI 音符参数不正确。");
-  }
-  for (let i = 0; i < b.notes.length; i++)
-    for (let j = i + 1; j < b.notes.length; j++) {
-      const a = b.notes[i],
-        c = b.notes[j];
-      if (
-        a.pitch === c.pitch &&
-        a.start < c.start + c.duration &&
-        c.start < a.start + a.duration
-      )
-        throw Error("同音高的 MIDI 音符不能重叠。");
+// SMF 0/1：支持运行状态、速度、拍号和多轨。保留原始音符时序。
+function midiParse(buffer) {
+  const bytes = new Uint8Array(buffer);
+  const view = new DataView(buffer); let pos = 0;
+  const read = () => { if (pos >= bytes.length) throw Error("MIDI 文件截断。"); return bytes[pos++]; };
+  const tag = () => String.fromCharCode(read(), read(), read(), read());
+  const u16 = () => (read() << 8) | read();
+  const u32 = () => { const v = view.getUint32(pos); pos += 4; return v; };
+  function vlq() { let n = 0; for (let i = 0; i < 4; i++) { const v = read(); n = n * 128 + (v & 127); if (!(v & 128)) return n; } throw Error("MIDI 时间编码不正确。"); }
+  if (tag() !== "MThd") throw Error("请选择标准 .mid 文件。");
+  const headerLen = u32(); if (headerLen < 6) throw Error("MIDI 文件头无效。");
+  const format = u16(), count = u16(), ppq = u16();
+  if (format > 1) throw Error("暂不支持独立序列格式 2。");
+  if (ppq & 0x8000 || !ppq) throw Error("暂不支持 SMPTE 时间码 MIDI。");
+  pos = 8 + headerLen;
+  const tracks = []; const tempos = []; const meters = [];
+  for (let index = 0; index < count; index++) {
+    if (tag() !== "MTrk") throw Error("MIDI 轨道无效。");
+    const length = u32(); const end = pos + length;
+    if (end > bytes.length) throw Error("MIDI 轨道截断。");
+    let tick = 0, running = 0, name = "轨道 " + (index + 1); const notes = []; const pending = new Map();
+    while (pos < end) {
+      tick += vlq(); let statusByte = read();
+      if (statusByte < 128) { if (!running) throw Error("运行状态缺失。"); pos--; statusByte = running; }
+      else if (statusByte < 240) running = statusByte;
+      if (statusByte === 255) {
+        const type = read(), size = vlq(); if (pos + size > end) throw Error("元事件越界。");
+        const body = bytes.slice(pos, pos + size); pos += size;
+        if (type === 3) name = new TextDecoder().decode(body) || name;
+        if (type === 0x51 && size === 3) tempos.push({ tick, bpm: 60000000 / ((body[0] << 16) | (body[1] << 8) | body[2]) });
+        if (type === 0x58 && size >= 2) meters.push({ tick, meter: body[0] + "/" + 2 ** body[1] });
+      } else if (statusByte === 240 || statusByte === 247) { const size = vlq(); pos += size; }
+      else if (statusByte >= 240) throw Error("不支持的 MIDI 系统事件。");
+      else {
+        const kind = statusByte >> 4, channel = statusByte & 15; const a = read(); const c = [12, 13].includes(kind) ? 0 : read();
+        const key = channel + ":" + a;
+        if (kind === 9 && c > 0) { if (!pending.has(key)) pending.set(key, []); pending.get(key).push({ start: tick, velocity: c, pitch: a }); }
+        else if (kind === 8 || (kind === 9 && c === 0)) { const n = pending.get(key)?.shift(); if (n) notes.push({ id: uid(), pitch: n.pitch, start: n.start / ppq * 4, duration: Math.max(1 / 120, (tick - n.start) / ppq * 4), velocity: n.velocity }); }
+      }
+      if (pos > end) throw Error("MIDI 事件越界。");
     }
+    for (const queue of pending.values()) for (const n of queue) notes.push({ id: uid(), pitch: n.pitch, start: n.start / ppq * 4, duration: Math.max(1, (tick - n.start) / ppq * 4), velocity: n.velocity });
+    tracks.push({ name, notes, end: tick / ppq * 4 }); pos = end;
+  }
+  tempos.sort((a, b) => a.tick - b.tick); meters.sort((a, b) => a.tick - b.tick);
+  return { tracks, bpm: tempos[0]?.bpm || 90, meter: meters[0]?.meter || "4/4", variable: new Set(tempos.map(x => x.bpm)).size > 1 || new Set(meters.map(x => x.meter)).size > 1 };
 }
-// 把 MIDI 音高编号转换为音名；这里使用 60 = C4。
+function midiThumbnail(b) {
+  const canvas = el("canvas", { class: "midi-thumbnail", width: 250, height: 70, "aria-label": "音型缩略图：" + (b.name || "") });
+  const c = canvas.getContext("2d"); c.fillStyle = "#eff3e9"; c.fillRect(0, 0, 250, 70);
+  const pitches = b.notes.map(n => n.pitch), low = Math.min(48, ...pitches), high = Math.max(72, ...pitches), end = Math.max(16, ...b.notes.map(n => n.start + n.duration));
+  c.fillStyle = "#438474";
+  for (const n of b.notes) c.fillRect(n.start / end * 246 + 2, 4 + (high - n.pitch) / (high - low + 1) * 60, Math.max(2, n.duration / end * 246), 4);
+  return canvas;
+}
+function midiPresets(b) {
+  data.presets ||= [];
+  if (!data.presets.length) {
+    for (const [name, pitches] of [["C 大调上行分解", [60, 64, 67, 72]], ["交替分解", [60, 67, 64, 67]], ["柱式和弦", [60, 64, 67]]]) {
+      const notes = []; if (name === "柱式和弦") pitches.forEach(pitch => notes.push({ pitch, start: 0, duration: 8, velocity: 90 }));
+      else for (let s = 0; s < 16; s += 2) notes.push({ pitch: pitches[s / 2 % 4], start: s, duration: 2, velocity: 90 });
+      data.presets.push({ id: uid(), name, bars: 1, bpm: 90, meter: "4/4", notes });
+    }
+    changed();
+  }
+  const d = el("dialog", { class: "preset-dialog" }, [el("h2", { text: "选择示例" }), el("p", { class: "muted", text: "插入到当前起点，生成独立副本，可继续修改。" })]);
+  const grid = el("div", { class: "preset-grid" });
+  for (const p of data.presets) {
+    const card = el("div", { class: "preset-card" }, [midiThumbnail(p), el("h3", { text: p.name }), button("添加到当前模块", () => {
+      const v = stateFor(b); const start = Math.floor(v.start); b.notes.push(...clone(p.notes).map(n => ({ ...n, id: uid(), start: n.start + start })));
+      b.bars = Math.max(b.bars, Math.ceil(Math.max(...b.notes.map(n => n.start + n.duration)) / meterSteps(b))); v.loopB = b.bars * meterSteps(b); d.close(); redraw();
+    }, "primary")]);
+    grid.append(card);
+  }
+  d.append(grid, button("关闭", () => d.close())); d.onclose = () => d.remove(); document.body.append(d); d.showModal();
+}
+async function midiImport(b, f) {
+  if (!f) return;
+  try {
+    if (f.size > 10 * 1024 * 1024) throw Error("MIDI 文件最大 10 MB。");
+    const parsed = midiParse(await f.arrayBuffer());
+    const candidates = parsed.tracks.filter(t => t.notes.length);
+    if (!candidates.length) throw Error("文件中没有音符。");
+    const d = el("dialog", {}, [el("h2", { text: "选择导入轨道" })]);
+    if (parsed.variable) d.append(el("p", { text: "此文件含速度或拍号变化；当前版本用首个速度和拍号播放，保留音符拍位置。" }));
+    function importTrack(t) {
+      if (b.notes.length && !confirm("导入会替换当前模块的音符，继续？")) return;
+      if (!["4/4", "3/4", "6/4", "6/8"].includes(parsed.meter)) return status("文件拍号暂不支持：" + parsed.meter);
+      b.notes = clone(t.notes); b.bpm = clamp(Math.round(parsed.bpm), 20, 300); b.meter = parsed.meter;
+      b.bars = Math.max(1, Math.ceil(Math.max(t.end, ...b.notes.map(n => n.start + n.duration)) / meterSteps(b)));
+      b.octave = clamp(Math.floor(Math.min(...b.notes.map(n => n.pitch)) / 12) - 1, -1, 8);
+      midiValidate(b); delete b.editorView; viewState.delete(b.id); d.close(); redraw();
+    }
+    candidates.forEach(t => d.append(button(t.name + " · " + t.notes.length + " 个音符", () => { try { importTrack(t); } catch (e) { status(e.message); } })));
+    d.append(button("取消", () => d.close())); d.onclose = () => d.remove(); document.body.append(d); d.showModal();
+  } catch (e) { status("导入失败：" + e.message); }
+}
+
+/** Canvas 编辑器：只绘制八小节窗口，长序列不生成海量 DOM。
+ * 音符主体拖动移动；Alt/Option 复制；Ctrl/Command 纵向拖动力度。
+ * 空白拖绘时值，边缘拉伸，Shift 点击多选，框选工具支持组编辑。
+ */
+function midiRender(card, b) {
+  repairBlock(b); const v = stateFor(b); activeBlock ||= b;
+  transportControls(card, b);
+  const extras = el("div", { class: "midi-options" });
+  const file = el("input", { type: "file", accept: ".mid,.midi,audio/midi", hidden: "", onchange: e => midiImport(b, e.target.files[0]) });
+  if (editing) extras.append(button("导入 .mid", () => file.click()), file);
+  extras.append(button("导出 .mid", () => midiDownload(b)));
+  extras.append(choice("网格", b.snap || 1, [[4, "1/4"], [2, "1/8"], [1, "1/16"], [.5, "1/32"]], n => { b.snap = Number(n); changed(); paint(); }));
+  extras.append(numberControl("显示八度", b.octave, -1, 8, n => { b.octave = n; changed(); paint(); }));
+  if (editing) extras.append(button("保存为示例", () => {
+    const name = prompt("示例名称", blockTitle(b)); if (!name?.trim()) return;
+    data.presets.push({ id: uid(), name: name.trim(), bpm: b.bpm, meter: b.meter, bars: b.bars, notes: clone(b.notes) }); changed(); status("已保存示例：" + name);
+  }), button("选择示例", () => midiPresets(b)), choice("编辑工具", v.tool || "draw", [["draw", "画音符"], ["select", "框选"]], s => v.tool = s), button("删除选中", () => { const selected = selectedNotes.get(b.id) || new Set(); b.notes = b.notes.filter(n => !selected.has(n.id)); selected.clear(); changed(); paint(); }));
+  card.append(extras);
+  const wrap = el("div", { class: "midi-canvas-wrap" });
+  const canvas = el("canvas", { class: "midi-canvas", "aria-label": "MIDI 钢琴卷帘：八小节窗口", tabindex: "0" }); canvas.dataset.midiCanvas = b.id;
+  const hint = el("div", { class: "hint", text: "空白拖绘音符 · 拖主体移动 · 拖右边缘改长度 · Alt/Option＋拖动复制 · Ctrl/Command＋上下拖动力度 · Shift 点击多选 · Shift 拖标尺设循环 · 空格播放 / 暂停" });
+  wrap.append(canvas); card.append(wrap, hint);
+  let w = 900; const h = 560, keyW = 52, top = 65, rowH = 19, rows = 25;
+  let drag = null, ghost = [], selectionRect = null;
+  const selected = selectedNotes.get(b.id) || new Set(); selectedNotes.set(b.id, selected);
+  const low = () => clamp((b.octave + 1) * 12, 0, 103);
+  const visibleSteps = () => meterSteps(b) * 8;
+  const cellW = () => (w - keyW) / visibleSteps();
+  const first = () => v.left * meterSteps(b);
+  function coords(e) {
+    const rect = canvas.getBoundingClientRect(); const x = (e.clientX - rect.left) * w / rect.width; const y = (e.clientY - rect.top) * h / rect.height;
+    return { x, y, step: first() + (x - keyW) / cellW(), pitch: clamp(low() + rows - 1 - Math.floor((y - top) / rowH), 0, 127) };
+  }
+  function noteRect(n) { return { x: keyW + (n.start - first()) * cellW(), y: top + (low() + rows - 1 - n.pitch) * rowH + 2, width: n.duration * cellW(), height: rowH - 4 }; }
+  function hit(c) { return [...b.notes].reverse().find(n => { const r = noteRect(n); return c.x >= r.x && c.x <= r.x + r.width && c.y >= r.y && c.y <= r.y + r.height; }); }
+  function snap(s) { return Math.round(s / b.snap) * b.snap; }
+  function paint() {
+    const c = canvas.getContext("2d"); c.clearRect(0, 0, w, h); c.fillStyle = "#fafbf7"; c.fillRect(0, 0, w, h);
+    const steps = meterSteps(b); const cell = cellW();
+    for (let r = 0; r < rows; r++) {
+      const pitch = low() + rows - 1 - r; const y = top + r * rowH;
+      c.fillStyle = [1, 3, 6, 8, 10].includes(pitch % 12) ? "#edf0e9" : "#fafbf7"; c.fillRect(keyW, y, w - keyW, rowH);
+      c.fillStyle = "#ffffff"; c.fillRect(0, y, keyW - 1, rowH); c.fillStyle = "#53695f"; c.font = "11px sans-serif"; c.fillText(midiPitch(pitch), 5, y + 13);
+      c.strokeStyle = "#e4e9df"; c.beginPath(); c.moveTo(0, y + rowH); c.lineTo(w, y + rowH); c.stroke();
+    }
+    c.fillStyle = "#edf3e8"; c.fillRect(keyW, 0, w - keyW, top);
+    if (v.loop) {
+      const loopLeft = clamp(keyW + (v.loopA - first()) * cell, keyW, w);
+      const loopRight = clamp(keyW + (v.loopB - first()) * cell, keyW, w);
+      c.fillStyle = "#d4e4cd"; c.fillRect(loopLeft, 0, Math.max(0, loopRight - loopLeft), 22);
+    }
+    const unit = b.meter === "6/8" ? 2 : 4;
+    for (let i = 0; i <= visibleSteps(); i += b.snap) {
+      const s = first() + i; const x = keyW + i * cell;
+      c.strokeStyle = s % steps < .001 ? "#769588" : s % unit < .001 ? "#b5c6b8" : "#e1e7dc";
+      c.lineWidth = s % steps < .001 ? 1.5 : .5; c.beginPath(); c.moveTo(x, top); c.lineTo(x, top + rows * rowH); c.stroke();
+      if (Math.abs(s % steps) < .001) {
+        c.fillStyle = "#356b58"; c.font = "bold 12px sans-serif"; c.fillText("" + (Math.floor(s / steps) + 1), x + 3, 17);
+        const secs = s * 60 / b.bpm / 4; c.font = "10px sans-serif"; c.fillStyle = "#7b8b80"; c.fillText(Math.floor(secs / 60) + ":" + String(Math.floor(secs % 60)).padStart(2, "0"), x + 3, 34);
+      }
+      if (i % 1 === 0 && cell >= 5) {
+        const label = s % unit < .001 ? Math.floor(s % steps / unit) + 1 : unit === 4 ? ["", "e", "&", "a"][Math.floor(s % 4)] : "&";
+        const groupAccent = b.meter === "6/8" && Math.abs(s % steps % 6) < .001;
+        if (groupAccent) { c.fillStyle = "#c8dec2"; c.fillRect(x, 39, Math.max(10, unit * cell), 23); }
+        c.fillStyle = s % unit < .001 || label === "&" ? "#376d58" : "#99a89b"; c.font = s % unit < .001 ? "bold 10px sans-serif" : "9px sans-serif"; c.fillText(String(label), x + 1, 55);
+      }
+    }
+    c.save(); c.beginPath(); c.rect(keyW, top, w - keyW, rows * rowH); c.clip();
+    for (const n of [...b.notes, ...ghost]) {
+      if (b.notes.includes(n) && drag?.original?.includes(n.id) && ["move", "resize", "velocity"].includes(drag.mode)) continue;
+      const r = noteRect(n); c.fillStyle = "rgba(45,119,93," + (.35 + n.velocity / 127 * .65) + ")"; c.fillRect(r.x, r.y, Math.max(2, r.width - 1), r.height);
+      if (selected.has(n.id)) { c.strokeStyle = "#bd8e4c"; c.lineWidth = 2; c.strokeRect(r.x, r.y, Math.max(2, r.width - 1), r.height); }
+    }
+    if (selectionRect) { c.fillStyle = "#b3cfc440"; c.fillRect(selectionRect.x, selectionRect.y, selectionRect.width, selectionRect.height); c.strokeStyle = "#649f88"; c.strokeRect(selectionRect.x, selectionRect.y, selectionRect.width, selectionRect.height); }
+    c.restore();
+    const cursorX = keyW + (v.cursor - first()) * cell;
+    if (cursorX >= keyW && cursorX <= w) { c.strokeStyle = "#7caf97"; c.lineWidth = 2; c.beginPath(); c.moveTo(cursorX, top); c.lineTo(cursorX, top + rows * rowH); c.stroke(); }
+    c.fillStyle = "#587361"; c.font = "12px sans-serif"; c.fillText("音符 " + b.notes.length + " · 可见八小节 · 起点 " + (Math.floor(v.start / steps) + 1), 10, h - 4);
+    if (drag?.mode === "velocity" && ghost.length) { c.fillStyle = "#285d49"; c.fillText("力度 " + ghost[0].velocity, clamp(drag.last.x, 0, w - 90), clamp(drag.last.y - 10, 20, h - 10)); }
+  }
+  canvas.paint = paint;
+  const observer = new ResizeObserver(() => {
+    w = Math.max(720, Math.round(wrap.clientWidth)); const dpr = window.devicePixelRatio || 1;
+    canvas.width = w * dpr; canvas.height = h * dpr; canvas.style.width = w + "px"; canvas.style.height = h + "px"; canvas.getContext("2d").setTransform(dpr, 0, 0, dpr, 0, 0); paint();
+  }); observer.observe(wrap);
+  const cleanup = new MutationObserver(() => { if (!canvas.isConnected) { observer.disconnect(); cleanup.disconnect(); } }); cleanup.observe($("blocks"), { childList: true, subtree: true });
+  canvas.onpointerdown = e => {
+    activeBlock = b; canvas.focus(); const c = coords(e); e.preventDefault(); canvas.setPointerCapture(e.pointerId);
+    if (c.y < top && c.x >= keyW) {
+      stop();
+      if (e.shiftKey) {
+        drag = { mode: "loop", c }; v.loop = true;
+        v.loopA = clamp(snap(c.step), 0, b.bars * meterSteps(b) - b.snap);
+        v.loopB = v.loopA + b.snap; paint(); return;
+      }
+      v.start = clamp(v.origin === "bar" ? Math.floor(c.step / meterSteps(b)) * meterSteps(b) : Math.max(0, snap(c.step)), 0, b.bars * meterSteps(b) - b.snap);
+      v.cursor = v.start; changed(); paint(); return;
+    }
+    if (v.hand) { stop(); drag = { mode: "pan", c, left: v.left }; canvas.style.cursor = "grabbing"; return; }
+    if (!editing || c.x < keyW || c.y > top + rows * rowH) return;
+    const n = hit(c);
+    if (n) {
+      if (e.shiftKey) { selected.has(n.id) ? selected.delete(n.id) : selected.add(n.id); paint(); return; }
+      if (!selected.has(n.id)) { selected.clear(); selected.add(n.id); }
+      const picked = b.notes.filter(x => selected.has(x.id)); const r = noteRect(n);
+      const mode = e.ctrlKey || e.metaKey ? "velocity" : e.altKey ? "copy" : c.x > r.x + r.width - Math.min(5, r.width / 3) ? "resize" : "move";
+      drag = { mode, c, original: picked.map(x => x.id), notes: clone(picked), last: c }; ghost = clone(picked);
+      if (mode === "copy") ghost.forEach(n => n.id = uid());
+    } else if (v.tool === "select") { drag = { mode: "select", c }; }
+    else {
+      selected.clear(); const start = Math.max(0, Math.floor(c.step / b.snap) * b.snap);
+      ghost = [{ id: uid(), pitch: c.pitch, start, duration: b.snap, velocity: 90 }]; drag = { mode: "draw", c, start };
+    }
+    paint();
+  };
+  canvas.onpointermove = e => {
+    const c = coords(e);
+    if (!drag) { canvas.style.cursor = v.hand ? "grab" : hit(c) ? e.altKey ? "copy" : (e.ctrlKey || e.metaKey) ? "ns-resize" : "move" : "crosshair"; return; }
+    drag.last = c;
+    if (drag.mode === "loop") {
+      const max = b.bars * meterSteps(b);
+      v.loopA = clamp(Math.min(snap(drag.c.step), snap(c.step)), 0, max - b.snap);
+      v.loopB = clamp(Math.max(snap(drag.c.step), snap(c.step)) + b.snap, v.loopA + b.snap, max);
+      paint(); return;
+    }
+    if (drag.mode === "pan") { v.left = clamp(drag.left - (c.x - drag.c.x) / (w - keyW) * 8, 0, Math.max(0, b.bars - 8)); paint(); return; }
+    if (drag.mode === "select") {
+      selectionRect = { x: Math.min(c.x, drag.c.x), y: Math.min(c.y, drag.c.y), width: Math.abs(c.x - drag.c.x), height: Math.abs(c.y - drag.c.y) }; paint(); return;
+    }
+    if (drag.mode === "draw") {
+      const end = Math.max(0, Math.floor(c.step / b.snap) * b.snap); ghost[0].start = Math.min(drag.start, end); ghost[0].duration = Math.abs(end - drag.start) + b.snap;
+    } else {
+      let delta = snap(c.step - drag.c.step); delta = Math.max(delta, -Math.min(...drag.notes.map(n => n.start)));
+      const pitchDelta = clamp(c.pitch - drag.c.pitch, -Math.min(...drag.notes.map(n => n.pitch)), 127 - Math.max(...drag.notes.map(n => n.pitch)));
+      ghost.forEach((n, i) => {
+        const old = drag.notes[i];
+        if (drag.mode === "velocity") n.velocity = clamp(old.velocity + Math.round((drag.c.y - c.y) / 2), 1, 127);
+        else if (drag.mode === "resize") n.duration = Math.max(b.snap, old.duration + delta);
+        else { n.start = old.start + delta; n.pitch = old.pitch + pitchDelta; }
+      });
+    }
+    paint();
+  };
+  canvas.onpointerup = () => {
+    if (!drag) return;
+    if (drag.mode === "select" && selectionRect) {
+      selected.clear(); b.notes.forEach(n => { const r = noteRect(n); if (r.x < selectionRect.x + selectionRect.width && r.x + r.width > selectionRect.x && r.y < selectionRect.y + selectionRect.height && r.y + r.height > selectionRect.y) selected.add(n.id); });
+    } else if (drag.mode === "pan") {
+      panStart(b, v); changed();
+    } else if (drag.mode === "loop") {
+      v.start = v.loopA; v.cursor = v.loopA; changed();
+    } else {
+      if (["move", "resize", "velocity"].includes(drag.mode)) b.notes = b.notes.filter(n => !drag.original.includes(n.id));
+      b.notes.push(...ghost); selected.clear(); ghost.forEach(n => selected.add(n.id));
+      b.bars = Math.max(b.bars, Math.ceil(Math.max(1, ...b.notes.map(n => n.start + n.duration)) / meterSteps(b))); v.loopB = Math.max(v.loopB, b.bars * meterSteps(b)); changed();
+    }
+    ghost = []; drag = null; selectionRect = null; canvas.style.cursor = v.hand ? "grab" : "crosshair"; paint();
+  };
+  canvas.onpointercancel = () => { drag = null; ghost = []; selectionRect = null; paint(); };
+  canvas.ondblclick = e => { if (!editing) return; const n = hit(coords(e)); if (n) { b.notes = b.notes.filter(x => x !== n); changed(); paint(); } };
+  canvas.onkeydown = e => { if (["Delete", "Backspace"].includes(e.key) && editing) { e.preventDefault(); b.notes = b.notes.filter(n => !selected.has(n.id)); selected.clear(); changed(); paint(); } };
+}
 function midiPitch(p) {
   return (
     ["C", "C♯", "D", "D♯", "E", "F", "F♯", "G", "G♯", "A", "A♯", "B"][p % 12] +
     (Math.floor(p / 12) - 1)
   );
 }
-// 添加或删除音符；点击长音的任何一格都删除整颗音符。
-function midiToggle(b, pitch, step) {
-  const old = b.notes.find(
-    (n) => n.pitch === pitch && step >= n.start && step < n.start + n.duration,
-  );
-  if (old) {
-    b.notes.splice(b.notes.indexOf(old), 1);
-    return;
-  }
-  const duration = Math.min(b.length, b.bars * 16 - step);
-  if (
-    b.notes.some(
-      (n) =>
-        n.pitch === pitch &&
-        step < n.start + n.duration &&
-        n.start < step + duration,
-    )
-  )
-    return;
-  b.notes.push({ pitch, start: step, duration, velocity: b.velocity });
-}
-// 绘制 MIDI 专属界面：控制栏、音高键盘和可编辑的音符网格。
-function midiRender(card, b) {
-  const heading = editing
-    ? el("input", {
-        value: b.name,
-        "aria-label": "MIDI 名称",
-        oninput: (e) => {
-          b.name = e.target.value;
-          changed();
-        },
-      })
-    : el("h2", { text: b.name });
-  card.append(
-    el("div", { class: "block-head" }, [
-      heading,
-      el("span", { class: "pill", text: "MIDI · " + b.bars + " 小节" }),
-    ]),
-  );
-  const selected = el("div", {
-    class: "midi-selected",
-    text: "点格子添加音符；点已有音符删除。",
-  });
-  function refresh() {
-    stop();
-    changed();
-    render();
-  }
-  const play = el("button", {
-    class: "primary",
-    text: "▶ 播放",
-    "data-play": b.id,
-    onclick: async () => {
-      if (transport?.id === b.id) {
-        stop();
-        return;
-      }
-      try {
-        await midiStart(b);
-        play.textContent = "■ 停止";
-      } catch {
-        status("音频启动失败，请使用支持 Web Audio 的浏览器。");
-      }
-    },
-  });
-  const bpm = el("input", {
-    type: "number",
-    min: 40,
-    max: 220,
-    value: b.bpm,
-    "aria-label": "MIDI BPM",
-    onchange: (e) => {
-      b.bpm = Math.min(220, Math.max(40, Number(e.target.value) || 90));
-      e.target.value = b.bpm;
-      changed();
-    },
-  });
-  const controls = el("div", { class: "controls" }, [
-    play,
-    el("label", { text: "BPM " }, [bpm]),
-    el("button", { text: "导出 .mid", onclick: () => midiDownload(b) }),
-  ]);
-  card.append(controls);
-  function select(value, options, label, onchange) {
-    const s = el("select", { "aria-label": label, onchange });
-    for (const [v, text] of options) {
-      const o = el("option", { value: v, text });
-      if (Number(v) === value) o.setAttribute("selected", "");
-      s.append(o);
-    }
-    return el("label", { text: label + " " }, [s]);
-  }
-  if (editing) {
-    let editExisting = false;
-    const editMode = el("button", {
-      text: "模式：添加 / 删除",
-      onclick: () => {
-        editExisting = !editExisting;
-        editMode.textContent = editExisting
-          ? "模式：修改已有音符"
-          : "模式：添加 / 删除";
-        card.dataset.editNotes = String(editExisting);
-      },
-    });
-    const bar = select(
-      b.bars,
-      [
-        [1, "1 小节"],
-        [2, "2 小节"],
-        [4, "4 小节"],
-      ],
-      "长度",
-      (e) => {
-        const next = Number(e.target.value);
-        if (
-          b.notes.some((n) => n.start + n.duration > next * 16) &&
-          !confirm("缩短小节会删除超出部分，并截短跨越结尾的音符。继续？")
-        ) {
-          e.target.value = b.bars;
-          return;
-        }
-        b.bars = next;
-        b.notes = b.notes
-          .filter((n) => n.start < next * 16)
-          .map((n) => ({
-            ...n,
-            duration: Math.min(n.duration, next * 16 - n.start),
-          }));
-        refresh();
-      },
-    );
-    const octave = select(
-      b.octave,
-      [
-        [2, "C2–C4"],
-        [3, "C3–C5"],
-        [4, "C4–C6"],
-        [5, "C5–C7"],
-      ],
-      "显示音域",
-      (e) => {
-        b.octave = Number(e.target.value);
-        refresh();
-      },
-    );
-    const length = select(
-      b.length,
-      [
-        [1, "十六分"],
-        [2, "八分"],
-        [4, "四分"],
-        [8, "二分"],
-        [16, "全音符"],
-      ],
-      "新音符时值",
-      (e) => {
-        b.length = Number(e.target.value);
-        changed();
-      },
-    );
-    const velocity = el("input", {
-      type: "number",
-      min: 1,
-      max: 127,
-      value: b.velocity,
-      "aria-label": "新音符力度",
-      onchange: (e) => {
-        b.velocity = Math.min(
-          127,
-          Math.max(1, Math.round(Number(e.target.value) || 90)),
-        );
-        e.target.value = b.velocity;
-        changed();
-      },
-    });
-    card.append(
-      el("div", { class: "midi-options" }, [
-        editMode,
-        bar,
-        octave,
-        length,
-        el("label", { text: "新音符力度 " }, [velocity]),
-        el("button", {
-          text: "C 大调分解和弦示例",
-          onclick: () => {
-            if (b.notes.length && !confirm("用示例替换这个模块的全部音符？"))
-              return;
-            const root = (b.octave + 1) * 12;
-            b.notes = [];
-            for (let n = 0; n < b.bars * 16; n += 2)
-              b.notes.push({
-                pitch: root + [0, 4, 7, 12][(n / 2) % 4],
-                start: n,
-                duration: 2,
-                velocity: b.velocity,
-              });
-            refresh();
-          },
-        }),
-        el("button", {
-          text: "清空音符",
-          onclick: () => {
-            if (confirm("清空这个 MIDI 块的音符？")) {
-              b.notes = [];
-              refresh();
-            }
-          },
-        }),
-      ]),
-    );
-    selected.textContent =
-      "添加 / 删除模式：点格子；修改模式：点已有音符打开参数编辑。";
-    card.append(selected);
-  }
-  const steps = b.bars * 16,
-    grid = el("div", {
-      class: "piano-grid",
-      style: "grid-template-columns:64px repeat(" + steps + ", 28px)",
-    });
-  grid.append(el("span", { class: "piano-key", text: "音高" }));
-  for (let s = 0; s < steps; s++)
-    grid.append(
-      el("span", {
-        class: "count",
-        text:
-          s % 4 === 0
-            ? String(Math.floor(s / 16) + 1) + "." + String((s % 16) / 4 + 1)
-            : ["", "e", "&", "a"][s % 4],
-        "data-rhythm": b.id,
-        "data-step": s,
-      }),
-    );
-  const low = (b.octave + 1) * 12;
-  for (let pitch = low + 24; pitch >= low; pitch--) {
-    const black = [1, 3, 6, 8, 10].includes(pitch % 12);
-    grid.append(
-      el("span", {
-        class:
-          "piano-key" +
-          (black ? " black" : "") +
-          (pitch % 12 === 0 ? " root" : ""),
-        text: midiPitch(pitch),
-      }),
-    );
-    for (let s = 0; s < steps; s++) {
-      const note = b.notes.find(
-        (n) => n.pitch === pitch && s >= n.start && s < n.start + n.duration,
-      );
-      const button = el("button", {
-        class:
-          "piano-cell" +
-          (black ? " black" : "") +
-          (s % 4 === 0 ? " beat" : "") +
-          (note ? " note" : "") +
-          (note?.start === s ? " onset" : ""),
-        "data-rhythm": b.id,
-        "data-step": s,
-        "aria-label":
-          midiPitch(pitch) + " 第" + (s + 1) + "格" + (note ? " 已有音符" : ""),
-        "aria-pressed": String(!!note),
-        title: note
-          ? midiPitch(pitch) +
-            " · 时值 " +
-            note.duration +
-            " 格 · 力度 " +
-            note.velocity
-          : midiPitch(pitch),
-        onclick: () => {
-          if (!editing) {
-            status("点击「编辑页面」后可添加或删除音符。");
-            return;
-          }
-          if (card.dataset.editNotes === "true") {
-            if (note) midiEditNote(b, note);
-            else status("请点击已有音符，或切回添加模式。");
-            return;
-          }
-          stop();
-          midiToggle(b, pitch, s);
-          changed();
-          render();
-        },
-      });
-      grid.append(button);
-    }
-  }
-  card.append(el("div", { class: "piano-scroll" }, [grid]));
-  const hidden = b.notes.filter(
-    (n) => n.pitch < low || n.pitch > low + 24,
-  ).length;
-  card.append(
-    el("div", {
-      class: "hint",
-      text:
-        "共 " +
-        b.notes.length +
-        " 个音符" +
-        (hidden ? " · " + hidden + " 个在当前显示音域之外" : "") +
-        "。每格为十六分音符；同一列的不同音高可组成和弦。试听为合成键盘音色。",
-    }),
-  );
-}
-// 合成键盘试听音色；力度影响响度，时值决定音长。
+
 function midiSound(n, time, duration, bus) {
   const gain = ctx.createGain();
   gain.connect(bus);
@@ -396,62 +297,12 @@ function midiSound(n, time, duration, bus) {
   o.start(time);
   o.stop(time + duration + 0.045);
 }
-// 按音频时钟循环播放所有音符，与鼓模块共用 transport 和停止按钮。
-async function midiStart(b) {
-  stop();
-  ctx ||= new (window.AudioContext || window.webkitAudioContext)();
-  await ctx.resume();
-  const bus = ctx.createGain();
-  bus.connect(ctx.destination);
-  const tr = {
-    bus,
-    id: b.id,
-    step: 0,
-    next: ctx.currentTime + 0.06,
-    queue: [],
-    timer: null,
-    raf: null,
-  };
-  transport = tr;
-  function schedule() {
-    if (transport !== tr) return;
-    while (tr.next < ctx.currentTime + 0.1) {
-      const n = tr.step,
-        seconds = 60 / b.bpm / 4;
-      for (const note of b.notes)
-        if (note.start === n)
-          midiSound(note, tr.next, note.duration * seconds, bus);
-      tr.queue.push({ n, time: tr.next });
-      tr.next += seconds;
-      tr.step = (n + 1) % (b.bars * 16);
-    }
-  }
-  function draw() {
-    if (transport !== tr) return;
-    let n;
-    while (tr.queue.length && tr.queue[0].time <= ctx.currentTime)
-      n = tr.queue.shift().n;
-    if (n !== undefined)
-      document
-        .querySelectorAll("[data-rhythm]")
-        .forEach((e) =>
-          e.classList.toggle(
-            "playing",
-            e.dataset.rhythm === b.id && Number(e.dataset.step) === n,
-          ),
-        );
-    tr.raf = requestAnimationFrame(draw);
-  }
-  schedule();
-  tr.timer = setInterval(schedule, 25);
-  draw();
-}
-// 生成标准 MIDI 文件：格式 0，单轨，480 PPQ，包含速度与 4/4 拍号。
+
 function midiBytes(b) {
   midiValidate(b);
   const ticks = 120,
     tempo = Math.round(60000000 / b.bpm),
-    end = b.bars * 16 * ticks;
+    end = Math.ceil(b.bars * meterSteps(b) * ticks);
   const events = [
     {
       t: 0,
@@ -465,14 +316,14 @@ function midiBytes(b) {
         tempo & 255,
       ],
     },
-    { t: 0, order: 0, bytes: [0xff, 0x58, 4, 4, 2, 24, 8] },
+    { t: 0, order: 0, bytes: [0xff, 0x58, 4, Number(b.meter.split("/")[0]), Math.log2(Number(b.meter.split("/")[1])), 24, 8] },
     { t: 0, order: 0, bytes: [0xc0, 0] },
   ];
   for (const n of b.notes) {
     events.push(
-      { t: n.start * ticks, order: 2, bytes: [0x90, n.pitch, n.velocity] },
+      { t: Math.round(n.start * ticks), order: 2, bytes: [0x90, n.pitch, n.velocity] },
       {
-        t: (n.start + n.duration) * ticks,
+        t: Math.round((n.start + n.duration) * ticks),
         order: 1,
         bytes: [0x80, n.pitch, 0],
       },
@@ -530,58 +381,4 @@ function midiDownload(b) {
   a.click();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
   status("已导出 MIDI · 可以导入 Cubase 或 Logic。");
-}
-
-// 弹窗编辑已有音符；应用前再次校验，避免越界或同音高重叠。
-function midiEditNote(b, n) {
-  stop();
-  const dialog = el("dialog", {});
-  dialog.append(el("h2", { text: "修改 " + midiPitch(n.pitch) }));
-  const fields = {};
-  for (const [key, label, min, max] of [
-    ["pitch", "音高 MIDI 编号（60 = C4）", 36, 96],
-    ["start", "起点（从第 0 格计）", 0, b.bars * 16 - 1],
-    ["duration", "时值（格）", 1, b.bars * 16],
-    ["velocity", "力度", 1, 127],
-  ]) {
-    fields[key] = el("input", {
-      type: "number",
-      min,
-      max,
-      value: n[key],
-      "aria-label": label,
-    });
-    dialog.append(el("label", { text: label }, [fields[key]]));
-  }
-  const message = el("p", { class: "muted" });
-  dialog.append(
-    message,
-    el("div", { class: "actions" }, [
-      el("button", { text: "取消", onclick: () => dialog.close() }),
-      el("button", {
-        text: "应用修改",
-        class: "primary",
-        onclick: () => {
-          const updated = {};
-          for (const key of Object.keys(fields))
-            updated[key] = Number(fields[key].value);
-          const copy = clone(b);
-          copy.notes[b.notes.indexOf(n)] = updated;
-          try {
-            midiValidate(copy);
-          } catch (e) {
-            message.textContent = e.message;
-            return;
-          }
-          Object.assign(n, updated);
-          changed();
-          dialog.close();
-          render();
-        },
-      }),
-    ]),
-  );
-  dialog.addEventListener("close", () => dialog.remove());
-  document.body.append(dialog);
-  dialog.showModal();
 }

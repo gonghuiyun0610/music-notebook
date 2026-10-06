@@ -861,31 +861,3 @@ $("push").onclick = () =>
       "已保存到 GitHub。网页公开版本将在 Pages 部署完成后更新。";
     status("已保存到 GitHub ✓");
   });
-// ---------- 启动：先恢复本机草稿，再读取仓库发布的数据 ----------
-(async () => {
-  try {
-    settings = JSON.parse(localStorage.getItem(CONFIG) || "{}");
-    const saved = JSON.parse(localStorage.getItem(STORE) || "null");
-    if (saved) {
-      data = validate(saved.data);
-      bases = saved.bases || {};
-      dirty = !!saved.dirty;
-    }
-  } catch {
-    status("本机备份无法读取，将载入初始内容。");
-  }
-  if (!data) {
-    try {
-      const r = await fetch("./content.json", { cache: "no-store" });
-      if (!r.ok) throw Error();
-      data = validate(await r.json());
-    } catch {
-      data = clone(defaults);
-    }
-  }
-  current = data.pages[0].id;
-  render();
-  status(
-    dirty ? "已恢复本机草稿 · 尚未保存到 GitHub" : "准备就绪 · 点击播放听节奏",
-  );
-})();
