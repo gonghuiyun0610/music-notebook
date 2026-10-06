@@ -1,6 +1,98 @@
 <!doctype html>
-<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Music Notebook · 音乐学习库</title><link rel="stylesheet" href="style.css"><script src="midi.js" defer></script><script src="app.js" defer></script></head>
-<body><aside><a class="brand" href="./">♫ Music Notebook</a><p class="muted">把听见的，变成自己的知识。</p><input id="search" placeholder="搜索知识点…" aria-label="搜索知识点"><nav id="nav"></nav><button id="newPage">＋ 新建知识页</button><div class="aside-foot">文字 · 节奏 · 练习<br>你的音乐学习工作台</div></aside>
-<main><header><span id="crumb">我的音乐学习库</span><div class="actions"><button id="edit">编辑页面</button><button id="save">保存到本机</button><button id="cloud" class="primary">GitHub 同步</button></div></header><div class="page-head"><span class="eyebrow">LEARN · LISTEN · CREATE</span><h1 id="title"></h1><div id="meta"></div></div><div id="blocks"></div><div id="add" hidden class="add"><span>添加独立模块</span><button data-add="text">＋ 文字</button><button data-add="rhythm">＋ 节奏</button><button data-add="midi">＋ MIDI</button><button data-add="image">＋ 图片</button><button data-add="audio">＋ 音频</button></div><footer><span id="status" role="status">正在载入…</span><div><button id="export">导出备份</button><button id="import">导入备份</button><input type="file" id="importFile" accept="application/json,.json" hidden><button id="deletePage">删除本页</button></div></footer></main>
-<dialog id="sync"><h2>连接你的 GitHub 仓库</h2><p>保存会更新仓库根目录的 content.json。已同步内容可在其他设备读取，公开仓库中的内容也会公开。</p><label>GitHub 用户名<input id="owner" autocomplete="off" placeholder="例如 huiyun"></label><label>仓库名<input id="repo" placeholder="music-notebook"></label><label>分支<input id="branch" value="main"></label><label>授权令牌（仅留在当前页面内存）<input id="token" type="password" autocomplete="off" placeholder="Fine-grained personal access token"></label><p class="muted">只授权这个仓库，Contents 设置为 Read and write。关闭或刷新页面后需重新输入。<a href="https://github.com/settings/personal-access-tokens/new" target="_blank" rel="noopener noreferrer">创建令牌 ↗</a></p><p id="syncStatus" role="status"></p><div class="actions"><button id="closeSync">关闭</button><button id="pull">读取 GitHub 内容</button><button id="push" class="primary">保存到 GitHub</button></div></dialog>
-</body></html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Music Notebook · 音乐学习库</title>
+    <link rel="stylesheet" href="style.css?v=20261006-clean" />
+    <!-- 先加载 MIDI 模块，再加载主程序；defer 保证文档解析后按顺序执行。 -->
+    <script src="midi.js?v=20261006-clean" defer></script>
+    <script src="app.js?v=20261006-clean" defer></script>
+  </head>
+  <body>
+    <!-- 左侧知识目录 -->
+    <aside>
+      <a class="brand" href="./">♫ Music Notebook</a>
+      <p class="muted">把听见的，变成自己的知识。</p>
+      <input id="search" placeholder="搜索知识点…" aria-label="搜索知识点" />
+      <nav id="nav"></nav>
+      <button id="newPage">＋ 新建知识页</button>
+      <div class="aside-foot">文字 · 节奏 · 练习<br />你的音乐学习工作台</div>
+    </aside>
+    <!-- 主阅读区与模块编辑区 -->
+    <main>
+      <header>
+        <span id="crumb">我的音乐学习库</span>
+        <div class="actions">
+          <button id="edit">编辑页面</button
+          ><button id="save">保存到本机</button
+          ><button id="cloud" class="primary">GitHub 同步</button>
+        </div>
+      </header>
+      <div class="page-head">
+        <span class="eyebrow">LEARN · LISTEN · CREATE · MIDI</span>
+        <h1 id="title"></h1>
+        <div id="meta"></div>
+      </div>
+      <div id="blocks"></div>
+      <!-- 添加模块区域：仅在编辑模式显示 -->
+      <div id="add" hidden class="add">
+        <span>添加独立模块</span><button data-add="text">＋ 文字</button
+        ><button data-add="rhythm">＋ 节奏</button
+        ><button data-add="midi">＋ MIDI</button
+        ><button data-add="image">＋ 图片</button
+        ><button data-add="audio">＋ 音频</button>
+      </div>
+      <footer>
+        <span id="status" role="status">正在载入…</span>
+        <div>
+          <button id="export">导出备份</button
+          ><button id="import">导入备份</button
+          ><input
+            type="file"
+            id="importFile"
+            accept="application/json,.json"
+            hidden
+          /><button id="deletePage">删除本页</button>
+        </div>
+      </footer>
+    </main>
+    <!-- GitHub 同步配置；令牌仅保留在当前页面内存 -->
+    <dialog id="sync">
+      <h2>连接你的 GitHub 仓库</h2>
+      <p>
+        保存会更新仓库根目录的
+        content.json。已同步内容可在其他设备读取，公开仓库中的内容也会公开。
+      </p>
+      <label
+        >GitHub 用户名<input
+          id="owner"
+          autocomplete="off"
+          placeholder="例如 huiyun" /></label
+      ><label>仓库名<input id="repo" placeholder="music-notebook" /></label
+      ><label>分支<input id="branch" value="main" /></label
+      ><label
+        >授权令牌（仅留在当前页面内存）<input
+          id="token"
+          type="password"
+          autocomplete="off"
+          placeholder="Fine-grained personal access token"
+      /></label>
+      <p class="muted">
+        只授权这个仓库，Contents 设置为 Read and
+        write。关闭或刷新页面后需重新输入。<a
+          href="https://github.com/settings/personal-access-tokens/new"
+          target="_blank"
+          rel="noopener noreferrer"
+          >创建令牌 ↗</a
+        >
+      </p>
+      <p id="syncStatus" role="status"></p>
+      <div class="actions">
+        <button id="closeSync">关闭</button
+        ><button id="pull">读取 GitHub 内容</button
+        ><button id="push" class="primary">保存到 GitHub</button>
+      </div>
+    </dialog>
+  </body>
+</html>
