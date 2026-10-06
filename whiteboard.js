@@ -16,7 +16,7 @@ const BOARD_TYPES = [
 const BOARD_DEFAULTS = {
   text: { width: 440, height: 280 },
   rhythm: { width: 1050, height: 460 },
-  midi: { width: 1050, height: 1000 },
+  midi: { width: 1050, height: 830 },
   image: { width: 460, height: 460 },
   audio: { width: 460, height: 260 },
   group: { width: 1200, height: 900 },
@@ -65,7 +65,23 @@ function boardMigrate(x) {
       return wrapper;
     });
     walk(p.blocks, (b) => {
-      if (b.type === "group") boardEnsure(b);
+      if (b.type === "group") {
+        boardEnsure(b);
+        const parts = [];
+        for (const child of b.children) {
+          if (!child.isContentContainer) continue;
+          let y = child.layout.y + child.layout.height + 24;
+          for (const part of child.children) {
+            part.layout ||= {x:child.layout.x,y,...(BOARD_DEFAULTS[part.type] || BOARD_DEFAULTS.text)};
+            y = part.layout.y + part.layout.height + 24;
+            parts.push(part);
+          }
+          child.children = [];
+          delete child.isContentContainer;
+        }
+        b.children.push(...parts);
+        boardEnsure(b);
+      }
     });
   });
   return x;
@@ -115,6 +131,7 @@ validate = function (x) {
 const boardPreviousCreate = createBlock;
 createBlock = function (type) {
   const b = boardPreviousCreate(type);
+  if (BOARD_TYPES.some(([t])=>t===type)) b.title="未命名"+BOARD_TYPES.find(([t])=>t===type)[1];
   if (type === "group") {
     b.title = "新知识块";
     boardEnsure(b);
@@ -247,48 +264,42 @@ function boardAddContent(board, type, point) {
   boardEnsure(board);
   return child;
 }
-function boardNewContainer(board) {
-  const child = boardAddContent(board, "text");
-  child.isContentContainer = true;
-  child.title = "新内容块";
-  child.content = "";
-  child.layout.width = 1050;
-  child.layout.height = 700;
-  redraw();
+function boardActivate(id) {
+  boardActiveContent = id;
+  document.querySelectorAll(".whiteboard-content").forEach(section => {
+    const active = editing && section.dataset.contentId === id;
+    section.classList.toggle("content-active", active);
+    section.querySelectorAll("textarea").forEach(input => input.readOnly = !active);
+  });
 }
 function boardAddPart(board, type) {
-  const target = board.children.find(c => c.id === boardActiveContent);
-  if (!target) { status("请先点击一个内容块，或添加内容块。"); return; }
-  if (!target.isContentContainer) {
-    const original = clone(target);
-    original.id = uid();
-    delete original.layout;
-    Object.keys(target).forEach(k => { if (!["id", "layout", "title"].includes(k)) delete target[k]; });
-    Object.assign(target, {type:"text", content:"", children:[original], tags:[], practiceTags:[], isContentContainer:true});
+  const viewport = document.getElementById("block-" + board.id)?.querySelector(".knowledge-board-scroll");
+  const origin = {x:24+(viewport?.scrollLeft || 0),y:24+(viewport?.scrollTop || 0)};
+  // 在当前可见白板区域找一个空位，避免新部件落在视野外。
+  const size = BOARD_DEFAULTS[type];
+  let point = {...origin};
+  for(let attempt=0; attempt<100; attempt++) {
+    const overlap = board.children.find(c => point.x < c.layout.x+c.layout.width && point.x+size.width > c.layout.x && point.y < c.layout.y+c.layout.height && point.y+size.height > c.layout.y);
+    if(!overlap) break;
+    point.y = overlap.layout.y+overlap.layout.height+24;
   }
-  target.children.push(createBlock(type));
+  boardAddContent(board,type,point);
   redraw();
+  requestAnimationFrame(() => document.getElementById("block-"+boardActiveContent)?.scrollIntoView({block:"nearest",inline:"nearest"}));
 }
 contentMenu = function(list) {
   const board = allBlocks().find(x => x.b.type === "group" && x.b.children === list)?.b;
-  if (board) boardNewContainer(board);
+  if (board) document.getElementById("block-"+board.id)?.querySelector(".board-add-menu")?.setAttribute("open", "");
 };
-function boardEditorRail() {
-  document.getElementById("board-editor-rail")?.remove();
-  if (!editing) return;
-  const rail = el("div", {id:"board-editor-rail", class:"board-editor-rail"});
-  const boards = page().blocks.filter(b => b.type === "group");
-  const board = boards.find(b => b.id === boardSelectedKnowledge) || boards[0];
-  if (board) boardSelectedKnowledge = board.id;
-  rail.append(el("strong", {text:"添加部件"}), button("＋ 知识块", () => { const b=createBlock("group");page().blocks.push(b);boardSelectedKnowledge=b.id;boardActiveContent=null;redraw(); }));
-  if (board) {
-    rail.append(choice("当前知识块", board.id, boards.map(b => [b.id, blockTitle(b)]), id => {boardSelectedKnowledge=id;boardActiveContent=null;render();}));
-    rail.append(button("＋ 标题", () => boardAddHeading(board)), button("＋ 内容块", () => boardNewContainer(board)));
-    const expanded = el("details", {open:""}, [el("summary", {text:"内容块部件"})]);
-    BOARD_TYPES.forEach(([type,name]) => expanded.append(button("＋ " + name, () => boardAddPart(board,type))));
-    rail.append(expanded, el("p", {class:"muted",text:"点击内容块激活，再添加部件。"}));
-  }
-  document.querySelector("aside").append(rail);
+function boardLocalTools(board, list) {
+  const tools = el("div", {class:"board-local-tools"});
+  const menu = el("details", {class:"board-add-menu"});
+  menu.append(el("summary", {text:"＋", "aria-label":"添加白板部件"}));
+  const panel = el("div", {class:"board-add-options"});
+  panel.append(button("标题", () => {menu.open=false;boardAddHeading(board);}));
+  BOARD_TYPES.forEach(([type,name]) => panel.append(button(name, () => {menu.open=false;boardAddPart(board,type);})));
+  menu.append(panel);tools.append(menu,button("⋯",()=>boardMenu(board,list),"board-options-button"));
+  return tools;
 }
 
 // 图片或音频直接拖到白板，先持久保存文件，再添加相应内容块。
@@ -336,7 +347,6 @@ function boardContent(b, list, owner) {
   repairBlock(b);
   const pageEditing = editing;
   const contentEditing = pageEditing && b.id === boardActiveContent;
-  editing = contentEditing;
   const section = el("section", {
     id: (b.type === "group" ? "whiteboard-slot-" : "block-") + b.id,
     class: "whiteboard-content",
@@ -344,11 +354,9 @@ function boardContent(b, list, owner) {
   section.dataset.contentId = b.id;
   section.classList.toggle("content-active", contentEditing);
   if (pageEditing) {
-    section.addEventListener("pointerdown", e => {
-      if (boardActiveContent === b.id) return;
-      e.preventDefault(); e.stopImmediatePropagation();
-      boardActiveContent = b.id; boardSelectedKnowledge = owner.id;
-      render();
+    section.addEventListener("pointerdown", () => {
+      boardActivate(b.id);
+      boardSelectedKnowledge = owner.id;
     }, true);
   }
   const layout = b.layout;
@@ -409,20 +417,7 @@ function boardContent(b, list, owner) {
   const body = el("div", {
     class: "whiteboard-content-body module-body " + b.type,
   });
-  if (b.isContentContainer) {
-    b.children.forEach(part => {
-      const item = el("div", {class:"content-part"});
-      const bar = el("div", {class:"content-part-head"}, [el("span", {text: BOARD_TYPES.find(t => t[0] === part.type)?.[1] || blockTitle(part)})]);
-      if (editing) bar.append(button("删除部件", () => { b.children.splice(b.children.indexOf(part),1); redraw(); }));
-      item.append(bar);
-      if (part.type === "text") item.append(editing ? el("textarea", {oninput:e => {part.content=e.target.value;changed();}}, [document.createTextNode(part.content)]) : el("div", {class:"prose",text:part.content}));
-      else if (part.type === "rhythm") rhythm(item,part);
-      else if (part.type === "midi") midiRender(item,part);
-      else media(item,part);
-      body.append(item);
-    });
-    if (!b.children.length) body.append(el("p", {class:"muted",text:"从左侧添加文本、鼓、音符块、图片或音频。"}));
-  } else if (b.type === "text")
+  if (b.type === "text")
     body.append(
       editing
         ? el(
@@ -453,7 +448,7 @@ function boardContent(b, list, owner) {
     );
   }
   // 旧内容块下的嵌套结构仍可阅读，避免丢掉此前已经写入的内容。
-  if (!b.isContentContainer && b.type !== "group" && b.children.length)
+  if (b.type !== "group" && b.children.length)
     body.append(
       el(
         "div",
@@ -553,7 +548,7 @@ function boardContent(b, list, owner) {
       changed();
     };
   }
-  editing = pageEditing;
+  section.querySelectorAll("textarea").forEach(input => input.readOnly = pageEditing && !contentEditing);
   return section;
 }
 
@@ -565,29 +560,30 @@ function renderBoard(b, list) {
     class: "block knowledge-board",
   });
   const titleRow = el("div", { class: "knowledge-board-title" });
-  const collapse = button(b.collapsed ? "›" : "⌄", () => {
-    b.collapsed = !b.collapsed;
-    changed();
-    render();
-  });
-  collapse.setAttribute("aria-label", "展开或折叠知识块");
-  titleRow.append(collapse);
-  if (editing)
-    titleRow.append(
-      el("input", {
-        value: b.title,
-        "aria-label": "知识块大标题",
-        oninput: (e) => {
-          b.title = e.target.value;
-          changed();
-          nav();
-        },
-      }),
-      button("⋯", () => boardMenu(b, list)),
-    );
-  else titleRow.append(el("h2", { text: b.title }));
-  section.append(titleRow, boardPracticeActions(b));
-  if (b.collapsed) return section;
+  const title = el("h2", {text:b.title, class:"board-name", "aria-label":"白板名称"});
+  if(editing) {
+    title.tabIndex=0;
+    function beginName() {
+      title.contentEditable="true";title.focus();
+      const range=document.createRange();range.selectNodeContents(title);
+      const selection=window.getSelection();selection.removeAllRanges();selection.addRange(range);
+    }
+    const original=()=>b.title;
+    title.onclick=()=>{if(title.contentEditable!=="true")beginName();};
+    title.onkeydown=e=>{
+      if(e.key==="Enter") {e.preventDefault();if(title.contentEditable!=="true")beginName();else title.blur();}
+      if(e.key==="Escape") {e.preventDefault();title.textContent=original();title.contentEditable="false";title.blur();}
+    };
+    title.onblur=()=>{
+      const next=title.textContent.trim() || b.title;
+      title.contentEditable="false";title.textContent=next;
+      if(next!==b.title){b.title=next;changed();nav();}
+    };
+  }
+  titleRow.append(title);section.append(titleRow);
+  if(editing) section.append(boardLocalTools(b,list));
+  else section.append(boardPracticeActions(b));
+  // 顶部仅保留名称；旧版折叠白板自动展示，避免出现没有展开入口的空白。
   section.append(boardTags(b));
   const headings = el("div", { class: "knowledge-headings" });
   b.headings.forEach((h) => {
@@ -635,7 +631,7 @@ function renderBoard(b, list) {
       el("p", {
         class: "whiteboard-empty",
         text: editing
-          ? "从「＋ 内容块」添加内容，或把图片、音频拖到这里。"
+          ? "点击白板边缘的 ＋ 添加部件，也可拖入图片或音频。"
           : "此知识块还没有内容。",
       }),
     );
@@ -714,5 +710,12 @@ render = function () {
   boardPreviousRender();
   $("add").replaceChildren();
   $("add").hidden = true;
-  boardEditorRail();
+  document.getElementById("board-editor-rail")?.remove();
+  if(editing && !practiceHome) {
+    const blocks=$("blocks");
+    const roots=[...blocks.children].filter(section=>section.classList.contains("knowledge-board"));
+    const addBoard=afterId=>{const b=createBlock("group");const index=page().blocks.findIndex(item=>"block-"+item.id===afterId);page().blocks.splice(index<0?page().blocks.length:index+1,0,b);boardSelectedKnowledge=b.id;redraw();};
+    if(!roots.length)blocks.append(button("＋ 新知识块",()=>addBoard(),"new-board-entry"));
+    roots.forEach(section=>section.after(button("＋ 新知识块",()=>addBoard(section.id),"new-board-entry")));
+  }
 };

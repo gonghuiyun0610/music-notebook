@@ -129,6 +129,10 @@ validate = function (x) {
         if (!DRUMS[k] || !Array.isArray(t) || t.some((v) => v !== 0 && v !== 1))
           throw Error("鼓点格式错误。");
     }
+    if (b.type === "rhythm" && b.fineHits !== undefined) {
+      if (!b.fineHits || typeof b.fineHits !== "object" || Array.isArray(b.fineHits) || Object.entries(b.fineHits).some(([key,hits])=>!DRUMS[key] || !Array.isArray(hits) || hits.length>131072 || hits.some(s=>!Number.isFinite(s) || s<0 || s>=b.bars*meterSteps(b) || !Number.isInteger(s*2))))
+        throw Error("鼓量化数据格式错误。");
+    }
     if (b.type === "text" && typeof b.content !== "string")
       throw Error("文字格式不正确。");
     if (["image", "audio"].includes(b.type) && b.src && !safeURL(b.src, b.type))
@@ -1209,14 +1213,10 @@ async function togglePlayback(b) {
     if (play) play.textContent = "Ⅱ 暂停";
     let nextStep = Math.floor(from);
     let nextTime = tr.started + (nextStep - from) * tr.seconds;
-    if (b.type !== "midi" && nextTime < tr.started) {
-      nextStep++;
-      nextTime += tr.seconds;
-    }
     if (b.type === "midi") {
       // 从暂停位置继续时，恢复跨越起点的长音。
       for (const n of b.notes)
-        if (!(b.mutedPitches || []).includes(n.pitch) && n.start < from && n.start + n.duration > from)
+        if (!n.muted && n.start < from && n.start + n.duration > from)
           midiSound(
             n,
             tr.started,
@@ -1235,7 +1235,7 @@ async function togglePlayback(b) {
           for (const n of b.notes) {
             const at = nextTime + (n.start - nextStep) * tr.seconds;
             if (
-              !(b.mutedPitches || []).includes(n.pitch) &&
+              !n.muted &&
               n.start >= nextStep &&
               n.start < nextStep + 1 &&
               n.start < end &&
@@ -1253,11 +1253,18 @@ async function togglePlayback(b) {
             nextStep % 2 ? (((b.swing || 50) - 50) / 100) * 2 * tr.seconds : 0;
           for (const [k, values] of Object.entries(b.tracks))
             if (
-              values[nextStep] &&
+              values[nextStep] && nextTime >= tr.started - .0001 &&
               b.visible.includes(k) &&
               !b.muted.includes(k)
             )
               drumSound(k, nextTime + swingDelay, bus);
+          for(const [k,hits] of Object.entries(b.fineHits || {})) {
+            if(!b.visible.includes(k)||b.muted.includes(k))continue;
+            for(const s of hits) {
+              const at=nextTime+(s-nextStep)*tr.seconds;
+              if(s>=nextStep && s<nextStep+1 && s<end && at>=tr.started-.0001)drumSound(k,at,bus);
+            }
+          }
         }
         nextStep++;
         nextTime += tr.seconds;
@@ -1280,7 +1287,8 @@ async function togglePlayback(b) {
       const canvas = document.querySelector(
         '[data-midi-canvas="' + b.id + '"]',
       );
-      if (canvas?.paint) canvas.paint();
+      if (canvas?.updatePlayhead) canvas.updatePlayhead(position);
+      else if (canvas?.paint) canvas.paint();
       tr.raf = requestAnimationFrame(draw);
     }
     schedule();

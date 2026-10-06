@@ -32,6 +32,8 @@ Object.assign(DRUMS, {
 
 function drumEnsureTracks(b) {
   const size = b.bars * meterSteps(b);
+  b.snap = [4,2,1,.5].includes(b.snap) ? b.snap : 1;
+  b.fineHits ||= {};
   b.visible = [...new Set(b.visible || Object.keys(b.tracks))].filter(
     (k) => DRUMS[k],
   );
@@ -181,14 +183,19 @@ function drawDrumPlayhead(b, position) {
 }
 
 // 转移鼓点：保持轨道不变，并吸附到十六分网格；目标已有鼓点则拒绝覆盖。
+function drumHitAt(b,key,step) {
+  return Number.isInteger(step) ? !!b.tracks[key]?.[step] : (b.fineHits?.[key] || []).includes(step);
+}
+function drumSetHit(b,key,step,on) {
+  if(Number.isInteger(step)){b.tracks[key][step]=on?1:0;return;}
+  b.fineHits ||= {};b.fineHits[key] ||= [];
+  b.fineHits[key]=b.fineHits[key].filter(s=>s!==step);
+  if(on)b.fineHits[key].push(step);
+}
 function drumMoveHit(b, key, from, to) {
-  const total = b.bars * meterSteps(b);
-  if (!Number.isInteger(to) || to < 0 || to >= total || to === from)
-    return false;
-  if (!b.tracks[key]?.[from] || b.tracks[key][to]) return false;
-  b.tracks[key][from] = 0;
-  b.tracks[key][to] = 1;
-  return true;
+  const total=b.bars*meterSteps(b);
+  if(!Number.isInteger(to*2)||to<0||to>=total||to===from||!drumHitAt(b,key,from)||drumHitAt(b,key,to))return false;
+  drumSetHit(b,key,from,false);drumSetHit(b,key,to,true);return true;
 }
 
 // 无选择时循环全部；选择用整小节边界，和播放器共用 loopA / loopB。
@@ -215,12 +222,13 @@ function drumApplySelection(b, v) {
 
 rhythm = function (card, b) {
   repairBlock(b);
+  const editable = editing;
   drumEnsureTracks(b);
   const v = stateFor(b),
     steps = meterSteps(b),
     count = steps * 4;
   drumApplySelection(b, v);
-  v.left = clamp(v.left, 0, Math.max(0, b.bars + (editing ? 4 : 0) - 4));
+  v.left = clamp(v.left, 0, Math.max(0, b.bars + (editable ? 4 : 0) - 4));
   card.onpointerdown = () => (activeBlock = b);
   // 阅读模式只显示三个控件。编辑模式仅追加部件管理按钮。
   const controls = el("div", { class: "controls drum-simple-controls" });
@@ -246,6 +254,7 @@ rhythm = function (card, b) {
             Math.max(
               1,
               ...Object.values(b.tracks).map((t) => t.lastIndexOf(1) + 1),
+              ...Object.values(b.fineHits || {}).flat().map(s=>s+.5),
             ) / meterSteps(b),
           ),
         );
@@ -256,7 +265,8 @@ rhythm = function (card, b) {
       },
     ),
   );
-  if (editing) controls.append(button("管理鼓部件", () => drumParts(b)));
+  controls.append(choice("网格量化",b.snap,[[4,"1/4"],[2,"1/8"],[1,"1/16"],[.5,"1/32"]],n=>{b.snap=Number(n);changed();paint();}));
+  if (editable) controls.append(button("管理鼓部件", () => drumParts(b), "edit-only"));
   card.append(controls);
 
   const viewport = el("div", { class: "drum-four-viewport" });
@@ -269,7 +279,9 @@ rhythm = function (card, b) {
   canvas.dataset.drumCanvas = b.id;
   const labels = el("div", { class: "drum-name-buttons" });
   const line = el("div", { class: "drum-playhead", "aria-hidden": "true" });
-  stage.append(canvas, labels, line);
+  const seekHandle=button("▼",()=>{},"playhead-seek-handle");
+  seekHandle.setAttribute("aria-label","拖动鼓播放位置");
+  stage.append(canvas, labels, line,seekHandle);
   viewport.append(stage);
   card.append(viewport);
   // 真正的浏览器水平滚动条，独立于画布，纵向部件名称不会被滚走。
@@ -294,7 +306,7 @@ rhythm = function (card, b) {
     drag = null;
   const first = () => v.left * steps;
   const cellW = () => (width - labelW) / count;
-  const maxLeft = () => Math.max(0, b.bars + (editing ? 4 : 0) - 4);
+  const maxLeft = () => Math.max(0, b.bars + (editable ? 4 : 0) - 4);
   function syncScrollbar() {
     const plot = width - labelW;
     scroller.style.marginLeft = labelW + "px";
@@ -315,7 +327,8 @@ rhythm = function (card, b) {
       x,
       y,
       row: Math.floor((y - top) / rowH),
-      step: Math.floor(first() + (x - labelW) / cellW()),
+      step: Math.floor((first() + (x - labelW) / cellW()) / b.snap) * b.snap,
+      rawStep: first() + (x-labelW)/cellW(),
     };
   }
   function selectionNow() {
@@ -365,7 +378,7 @@ rhythm = function (card, b) {
       c.stroke();
     }
     const unit = b.meter === "6/8" ? 2 : 4;
-    for (let s = Math.floor(first()); s <= Math.ceil(first() + count); s++) {
+    for (let s = Math.ceil(first()/b.snap)*b.snap; s <= first()+count; s+=b.snap) {
       const x = labelW + (s - first()) * cellW();
       c.strokeStyle =
         s % steps === 0 ? "#8ba494" : s % unit === 0 ? "#c6d2c5" : "#e1e8dc";
@@ -382,12 +395,12 @@ rhythm = function (card, b) {
     }
     b.visible.forEach((key, row) => {
       for (
-        let s = Math.max(0, Math.floor(first()));
+        let s = Math.max(0, Math.floor(first()*2)/2);
         s < Math.min(b.tracks[key].length, Math.ceil(first() + count));
-        s++
+        s+=.5
       ) {
         if (
-          !b.tracks[key][s] ||
+          !drumHitAt(b,key,s) ||
           (drag?.kind === "note" &&
             drag.moved &&
             drag.key === key &&
@@ -398,17 +411,17 @@ rhythm = function (card, b) {
         c.fillRect(
           labelW + (s - first()) * cellW() + 2,
           top + row * rowH + 9,
-          Math.max(2, cellW() - 4),
+          Math.max(2, cellW() * .5 - 2),
           18,
         );
       }
     });
     if (drag?.kind === "note" && drag.moved) {
-      c.fillStyle = b.tracks[drag.key][drag.to] ? "#bd7970" : "#c8a25d";
+      c.fillStyle = drumHitAt(b,drag.key,drag.to) ? "#bd7970" : "#c8a25d";
       c.fillRect(
         labelW + (drag.to - first()) * cellW() + 2,
         top + drag.row * rowH + 8,
-        Math.max(2, cellW() - 4),
+        Math.max(2, cellW() * .5 - 2),
         20,
       );
     }
@@ -421,8 +434,8 @@ rhythm = function (card, b) {
         " 小节。再次框选同一范围或按 Esc 取消。"
       : "循环：全部 " +
         b.bars +
-        " 小节。框选上方小节块可设置循环；点击部件文字切换静音。";
-    if (editing)
+        " 小节。框选上方小节块可设置循环；标尺点击或拖动按量化定位；点击部件文字切换静音。";
+    if (editable)
       hint.textContent +=
         " 点空白添加、点鼓点删除、拖动鼓点移动；滚动到末尾空白小节可继续写。";
     if (!b.visible.length)
@@ -442,6 +455,7 @@ rhythm = function (card, b) {
     const x = labelW + (position - first()) * cellW();
     line.hidden = x < labelW || x > width || !Number.isFinite(x);
     line.style.left = x + "px";
+    seekHandle.hidden=line.hidden;seekHandle.style.left=(x-8)+"px";
     line.style.top = "31px";
     line.style.height = height - 31 - bottom + "px";
   }
@@ -485,6 +499,9 @@ rhythm = function (card, b) {
     syncScrollbar();
     paint();
   };
+  function seek(p) {
+    stop();v.start=clamp(Math.round(p.rawStep/b.snap)*b.snap,0,b.bars*steps-b.snap);v.cursor=v.start;changed();paint();
+  }
   canvas.onpointerdown = (e) => {
     if (e.button !== undefined && e.button !== 0) return;
     const p = coords(e);
@@ -495,9 +512,11 @@ rhythm = function (card, b) {
       e.preventDefault();
       const bar = clamp(Math.floor(p.step / steps), 0, b.bars - 1);
       drag = { kind: "range", a: bar, b: bar };
-    } else if (p.y < top) return;
+    } else if (p.y < top) {
+      e.preventDefault();drag={kind:"seek"};seek(p);
+    }
     else {
-      if (!editing || p.row < 0 || p.row >= b.visible.length || p.step < 0)
+      if (!editable || p.row < 0 || p.row >= b.visible.length || p.step < 0)
         return;
       stop();
       e.preventDefault();
@@ -510,7 +529,7 @@ rhythm = function (card, b) {
         to: p.step,
         x: p.x,
         moved: false,
-        existing: !!b.tracks[key][p.step],
+        existing: drumHitAt(b,key,p.step),
       };
     }
     canvas.setPointerCapture?.(e.pointerId);
@@ -519,12 +538,13 @@ rhythm = function (card, b) {
   canvas.onpointermove = (e) => {
     if (!drag) return;
     const p = coords(e);
+    if (drag.kind === "seek") {seek(p);return;}
     if (drag.kind === "range") {
       drag.b = clamp(Math.floor(p.step / steps), 0, b.bars - 1);
       paint();
     } else if (drag.existing && Math.abs(p.x - drag.x) > 3) {
       drag.moved = true;
-      drag.to = clamp(p.step, 0, b.bars * steps - 1);
+      drag.to = clamp(p.step, 0, b.bars * steps - b.snap);
       paint();
     }
   };
@@ -532,6 +552,7 @@ rhythm = function (card, b) {
     if (!drag) return;
     const d = drag;
     drag = null;
+    if (d.kind === "seek") {changed();paint();return;}
     if (d.kind === "range") {
       const range = {
         startBar: Math.min(d.a, d.b),
@@ -554,7 +575,7 @@ rhythm = function (card, b) {
         drumApplySelection(b, v);
         syncScrollbar();
       }
-      b.tracks[d.key][d.from] = b.tracks[d.key][d.from] ? 0 : 1;
+      drumSetHit(b,d.key,d.from,!drumHitAt(b,d.key,d.from));
     }
     changed();
     paint();
@@ -575,6 +596,10 @@ rhythm = function (card, b) {
       paint();
     }
   };
+  seekHandle.onpointerdown=e=>canvas.onpointerdown(e);
+  seekHandle.onpointermove=e=>canvas.onpointermove(e);
+  seekHandle.onpointerup=e=>canvas.onpointerup(e);
+  seekHandle.onkeydown=e=>{if(!["ArrowLeft","ArrowRight"].includes(e.key))return;e.preventDefault();stop();v.start=clamp(v.cursor+(e.key==="ArrowRight"?b.snap:-b.snap),0,b.bars*steps-b.snap);v.cursor=v.start;changed();paint();};
   function resize() {
     width = Math.max(320, viewport.clientWidth || card.clientWidth || 1000);
     stage.style.width = width + "px";

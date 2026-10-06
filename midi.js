@@ -10,7 +10,7 @@ function midiRepairLegacyBlock(b) {
 function midiValidate(b) {
   if (!Array.isArray(b.notes) || b.notes.length > 100000 || !["4/4", "3/4", "6/4", "6/8"].includes(b.meter || "4/4")) throw Error("MIDI 数据不正确。");
   if (!Number.isInteger(b.bars) || b.bars < 1 || b.bars > 4096 || !Number.isFinite(b.bpm) || b.bpm < 20 || b.bpm > 300) throw Error("MIDI 小节或 BPM 不正确。");
-  for (const n of b.notes) if (!Number.isInteger(n.pitch) || n.pitch < 0 || n.pitch > 127 || !Number.isFinite(n.start) || n.start < 0 || !Number.isFinite(n.duration) || n.duration <= 0 || n.start + n.duration > b.bars * meterSteps(b) + .01 || !Number.isInteger(n.velocity) || n.velocity < 1 || n.velocity > 127) throw Error("MIDI 音符越界或参数不正确。");
+  for (const n of b.notes) if (!Number.isInteger(n.pitch) || n.pitch < 0 || n.pitch > 127 || !Number.isFinite(n.start) || n.start < 0 || !Number.isFinite(n.duration) || n.duration <= 0 || n.start + n.duration > b.bars * meterSteps(b) + .01 || (n.muted !== undefined && typeof n.muted !== "boolean") || !Number.isInteger(n.velocity) || n.velocity < 1 || n.velocity > 127) throw Error("MIDI 音符越界或参数不正确。");
 }
 
 // SMF 0/1：支持运行状态、速度、拍号和多轨。保留原始音符时序。
@@ -111,198 +111,212 @@ async function midiImport(b, f) {
   } catch (e) { status("导入失败：" + e.message); }
 }
 
-/** Canvas 编辑器：只绘制四小节窗口，长序列不生成海量 DOM。
- * 音符主体拖动移动；Alt/Option 复制；Ctrl/Command 纵向拖动力度。
- * 空白拖绘时值，边缘拉伸，Shift 点击多选，框选工具支持组编辑。
- */
+/** 四小节钢琴卷帘：音区自适应、纵向滚动、逐音符静音及编辑。 */
 function midiRender(card, b) {
-  repairBlock(b); const v = stateFor(b); activeBlock ||= b;
-  v.loop = true;
-  if (!v.noteSelection) { v.loopA = 0; v.loopB = b.bars * meterSteps(b); }
-  v.left = clamp(v.left, 0, Math.max(0,b.bars + (editing ? 4 : 0) - 4));
-  const controls = el("div", {class:"controls drum-simple-controls"});
-  const play = button("▶ 播放", () => togglePlayback(b), "primary"); play.dataset.play = b.id;
-  controls.append(play, numberControl("BPM",b.bpm,20,300,n => {stop();b.bpm=n;changed();}), choice("拍号",b.meter,["4/4","3/4","6/4","6/8"].map(m => [m,m]),m => {
-    stop(); b.meter=m; b.bars=Math.max(b.bars,Math.ceil(Math.max(1,...b.notes.map(n=>n.start+n.duration))/meterSteps(b)));
-    v.noteSelection=null;v.loopA=0;v.loopB=b.bars*meterSteps(b);v.cursor=0;redraw();
-  }));
+  repairBlock(b);
+  b.snap = [4,2,1,.5].includes(b.snap) ? b.snap : 1;
+  // 将上一版按音高静音的数据迁移为每个音符的静音状态。
+  if (b.mutedPitches) {
+    b.notes.forEach(n => { if(b.mutedPitches.includes(n.pitch)) n.muted=true; });
+    delete b.mutedPitches;
+  }
+  const v=stateFor(b), editable=editing;
+  v.hand=false; v.loop=true;
+  const steps=()=>meterSteps(b), total=()=>b.bars*steps();
+  const maxLeft=()=>Math.max(0,b.bars+(editable?4:0)-4);
+  function applyLoop(){
+    if(v.noteSelection){
+      v.loopA=clamp(v.noteSelection.a,0,total()-1);
+      v.loopB=clamp(v.noteSelection.b,v.loopA+1,total());
+    }else{v.loopA=0;v.loopB=total();}
+  }
+  applyLoop();v.left=clamp(v.left,0,maxLeft());
+  const bounds=b.notes.length ? [Math.min(...b.notes.map(n=>n.pitch)),Math.max(...b.notes.map(n=>n.pitch))] : [48,72];
+  const signature=bounds.join(":");
+  if(v.pitchSignature!==signature || !Number.isFinite(v.highPitch)){
+    v.highPitch=clamp(bounds[1]+(b.notes.length?2:0),24,127);
+    v.pitchSignature=signature;
+  }
+  const selected=selectedNotes.get(b.id)||new Set();selectedNotes.set(b.id,selected);
+  let drag=null, ghost=[], selectionRect=null, w=900;
+  const keyW=56,top=65,rowH=19,rows=25,h=top+rows*rowH+12;
+  const low=()=>v.highPitch-rows+1;
+  const first=()=>v.left*steps();
+  const cellW=()=>(w-keyW)/(steps()*4);
+  const snap=s=>Math.round(s/b.snap)*b.snap;
+  const floorSnap=s=>Math.floor(s/b.snap)*b.snap;
+  const controls=el("div",{class:"controls drum-simple-controls"});
+  const play=button("▶ 播放",()=>togglePlayback(b),"primary");play.dataset.play=b.id;
+  controls.append(play,numberControl("BPM",b.bpm,20,300,n=>{stop();b.bpm=n;changed();}),choice("拍号",b.meter,["4/4","3/4","6/4","6/8"].map(m=>[m,m]),m=>{
+    stop();b.meter=m;b.bars=Math.max(b.bars,Math.ceil(Math.max(1,...b.notes.map(n=>n.start+n.duration))/steps()));
+    v.noteSelection=null;applyLoop();v.cursor=0;redraw();
+  }),choice("网格量化",b.snap,[[4,"1/4"],[2,"1/8"],[1,"1/16"],[.5,"1/32"]],n=>{b.snap=Number(n);changed();paint();}));
   card.append(controls);
-  const extras = el("div", { class: "midi-options" });
-  const file = el("input", { type: "file", accept: ".mid,.midi,audio/midi", hidden: "", onchange: e => midiImport(b, e.target.files[0]) });
-  if (editing) extras.append(button("导入 .mid", () => file.click()), file);
-  extras.append(button("导出 .mid", () => midiDownload(b)));
-  extras.append(choice("网格", b.snap || 1, [[4, "1/4"], [2, "1/8"], [1, "1/16"], [.5, "1/32"]], n => { b.snap = Number(n); changed(); paint(); }));
-  extras.append(numberControl("显示八度", b.octave, -1, 8, n => { b.octave = n; changed(); paint(); }));
-  if (editing) extras.append(button("保存为示例", () => {
-    const name = prompt("示例名称", blockTitle(b)); if (!name?.trim()) return;
-    data.presets.push({ id: uid(), name: name.trim(), bpm: b.bpm, meter: b.meter, bars: b.bars, notes: clone(b.notes) }); changed(); status("已保存示例：" + name);
-  }), button("选择示例", () => midiPresets(b)), choice("编辑工具", v.tool || "draw", [["draw", "画音符"], ["select", "框选"]], s => v.tool = s), button("删除选中", () => { const selected = selectedNotes.get(b.id) || new Set(); b.notes = b.notes.filter(n => !selected.has(n.id)); selected.clear(); changed(); paint(); }));
-  if (editing) {
-    const settings = el("details", {class:"midi-settings"}, [el("summary",{text:"管理音符"}),extras]);
-    card.append(settings);
+  if(editable){
+    const extras=el("div",{class:"midi-options edit-only"});
+    const file=el("input",{type:"file",accept:".mid,.midi,audio/midi",hidden:"",onchange:e=>{if(e.target.files[0])midiImport(b,e.target.files[0]);}});
+    extras.append(button("导入 MIDI",()=>file.click()),file,button("导出 MIDI",()=>midiDownload(b)),choice("编辑工具",v.tool||"draw",[["draw","画音符"],["select","框选"]],tool=>{v.tool=tool;v.hand=false;}),button("删除选中",()=>{
+      stop();b.notes=b.notes.filter(n=>!selected.has(n.id));selected.clear();changed();selectionControls();paint();
+    }));card.append(extras);
   }
-  const wrap = el("div", { class: "midi-canvas-wrap" });
-  const canvas = el("canvas", { class: "midi-canvas", "aria-label": "MIDI 钢琴卷帘：四小节窗口", tabindex: "0" }); canvas.dataset.midiCanvas = b.id;
-  const hint = el("div", { class: "hint", text: "点击音名切换静音 · 空白拖绘音符 · 拖主体移动 · 拖右边缘改长度 · Alt/Option＋拖动复制 · Ctrl/Command＋上下拖动力度 · Shift 点击多选 · 框选顶部小节块设循环 · 空格播放 / 暂停" });
-  wrap.append(canvas); card.append(wrap, hint);
-  const scroller = el("div", {class:"drum-time-scroll",tabindex:"0","aria-label":"音符时间轴水平滚动条"});
-  const spacer = el("div", {class:"drum-time-spacer"}); scroller.append(spacer);card.append(scroller);
-  function syncScroll() {
-    const plot=w-keyW; scroller.style.marginLeft=keyW+"px";scroller.style.width=plot+"px";
-    spacer.style.width=plot*(1+Math.max(0,b.bars+(editing?4:0)-4)/4)+"px";
+  const inspector=el("div",{class:"note-inspector edit-only","aria-live":"polite"});
+
+  function selectionControls(){
+    inspector.replaceChildren();
+    const picked=b.notes.filter(n=>selected.has(n.id));
+    if(!picked.length){inspector.hidden=true;return;}
+    inspector.hidden=false;
+    inspector.append(el("span",{text:picked.length===1?"已选 "+midiPitch(picked[0].pitch):"已选 "+picked.length+" 个音符"}));
+    const duration=el("input",{type:"number",min:b.snap/4,max:16384,step:b.snap/4,value:picked[0].duration/4,"aria-label":"音符时值（拍）"});
+    duration.onchange=()=>{
+      const value=Number(duration.value);
+      if(!Number.isFinite(value)||value<=0){duration.value=picked[0].duration/4;return;}
+      stop();picked.forEach(n=>n.duration=clamp(Math.round(value*4/b.snap)*b.snap,b.snap,4096*steps()-n.start));
+      b.bars=Math.max(b.bars,Math.ceil(Math.max(...b.notes.map(n=>n.start+n.duration))/steps()));applyLoop();changed();syncScroll();selectionControls();paint();
+    };
+    inspector.append(el("label",{text:"时值（拍） "},[duration]),numberControl("力度",picked[0].velocity,1,127,n=>{stop();picked.forEach(note=>note.velocity=n);changed();paint();}),button(picked.every(n=>n.muted)?"取消静音":"静音选中",()=>{
+      stop();const muted=!picked.every(n=>n.muted);picked.forEach(n=>n.muted=muted);changed();selectionControls();paint();
+    }));
+  }
+  const wrap=el("div",{class:"midi-roll-viewport"});
+  const stage=el("div",{class:"midi-roll-stage"});
+  const canvas=el("canvas",{class:"midi-canvas",tabindex:"0","aria-label":"四小节音符网格；上方小节块框选循环，下方标尺按量化选择播放位置"});canvas.dataset.midiCanvas=b.id;
+  const line=el("div",{class:"drum-playhead midi-playhead","aria-hidden":"true"});
+  const seekHandle=button("▼",()=>{},"playhead-seek-handle");
+  seekHandle.setAttribute("aria-label","拖动音符播放位置");
+  stage.append(canvas,line,seekHandle);
+  const pitchScroll=el("div",{class:"midi-pitch-scroll",tabindex:"0","aria-label":"音符音区纵向滚动条"});
+  pitchScroll.append(el("div",{style:"height:"+(128*rowH)+"px;width:1px"}));
+  wrap.append(stage,pitchScroll);card.append(wrap);
+  const scroller=el("div",{class:"drum-time-scroll",tabindex:"0","aria-label":"音符时间轴水平滚动条"});
+  const spacer=el("div",{class:"drum-time-spacer"});scroller.append(spacer);card.append(scroller);if(editable)card.append(inspector);
+  const hint=el("p",{class:"hint"});card.append(hint);
+  function syncScroll(){
+    const plot=w-keyW;scroller.style.marginLeft=keyW+"px";scroller.style.width=plot+"px";
+    spacer.style.width=plot*(1+maxLeft()/4)+"px";
     const left=v.left/4*plot;if(Math.abs(scroller.scrollLeft-left)>.5)scroller.scrollLeft=left;
+    const pitchOffset=(127-v.highPitch)*rowH;if(Math.abs(pitchScroll.scrollTop-pitchOffset)>.5)pitchScroll.scrollTop=pitchOffset;
   }
-  scroller.onscroll=()=>{v.left=clamp(scroller.scrollLeft/(w-keyW)*4,0,Math.max(0,b.bars+(editing?4:0)-4));paint();};
-  let w = 900; const h = 560, keyW = 52, top = 65, rowH = 19, rows = 25;
-  let drag = null, ghost = [], selectionRect = null;
-  const selected = selectedNotes.get(b.id) || new Set(); selectedNotes.set(b.id, selected);
-  const low = () => clamp((b.octave + 1) * 12, 0, 103);
-  const visibleSteps = () => meterSteps(b) * 4;
-  const cellW = () => (w - keyW) / visibleSteps();
-  const first = () => v.left * meterSteps(b);
-  function coords(e) {
-    const rect = canvas.getBoundingClientRect(); const x = (e.clientX - rect.left) * w / rect.width; const y = (e.clientY - rect.top) * h / rect.height;
-    return { x, y, step: first() + (x - keyW) / cellW(), pitch: clamp(low() + rows - 1 - Math.floor((y - top) / rowH), 0, 127) };
-  }
-  function noteRect(n) { return { x: keyW + (n.start - first()) * cellW(), y: top + (low() + rows - 1 - n.pitch) * rowH + 2, width: n.duration * cellW(), height: rowH - 4 }; }
-  function hit(c) { return [...b.notes].reverse().find(n => { const r = noteRect(n); return c.x >= r.x && c.x <= r.x + r.width && c.y >= r.y && c.y <= r.y + r.height; }); }
-  function snap(s) { return Math.round(s / b.snap) * b.snap; }
-  function paint() {
-    if (transport?.id === b.id && (v.cursor < first() || v.cursor >= first()+visibleSteps())) {v.left=clamp(Math.floor(v.cursor/meterSteps(b)/4)*4,0,Math.max(0,b.bars-4));syncScroll();}
-    const c = canvas.getContext("2d"); c.clearRect(0, 0, w, h); c.fillStyle = "#fafbf7"; c.fillRect(0, 0, w, h);
-    const steps = meterSteps(b); const cell = cellW();
-    for (let r = 0; r < rows; r++) {
-      const pitch = low() + rows - 1 - r; const y = top + r * rowH;
-      c.fillStyle = [1, 3, 6, 8, 10].includes(pitch % 12) ? "#edf0e9" : "#fafbf7"; c.fillRect(keyW, y, w - keyW, rowH);
-      c.fillStyle = "#ffffff"; c.fillRect(0, y, keyW - 1, rowH); c.fillStyle = "#53695f"; c.font = "11px sans-serif"; c.fillStyle=(b.mutedPitches || []).includes(pitch) ? "#adb5ad" : "#53695f"; c.fillText(midiPitch(pitch), 5, y + 13);
-      c.strokeStyle = "#e4e9df"; c.beginPath(); c.moveTo(0, y + rowH); c.lineTo(w, y + rowH); c.stroke();
+  pitchScroll.onscroll=()=>{v.highPitch=clamp(127-Math.round(pitchScroll.scrollTop/rowH),24,127);paint();};
+  pitchScroll.onkeydown=e=>{
+    if(!["ArrowDown","ArrowUp","Home","End"].includes(e.key))return;e.preventDefault();
+    v.highPitch=e.key==="Home"?127:e.key==="End"?24:clamp(v.highPitch+(e.key==="ArrowDown"?-1:1),24,127);syncScroll();paint();
+  };
+  wrap.onwheel=e=>{if(e.shiftKey)return;e.preventDefault();v.highPitch=clamp(v.highPitch-Math.sign(e.deltaY)*3,24,127);syncScroll();paint();};
+  scroller.onscroll=()=>{v.left=clamp(scroller.scrollLeft/(w-keyW)*4,0,maxLeft());paint();};
+  scroller.onkeydown=e=>{
+    if(!["ArrowLeft","ArrowRight","Home","End"].includes(e.key))return;e.preventDefault();
+    v.left=e.key==="Home"?0:e.key==="End"?maxLeft():clamp(v.left+(e.key==="ArrowRight"?1:-1),0,maxLeft());syncScroll();paint();
+  };
+  function coords(e){const rect=canvas.getBoundingClientRect();const x=(e.clientX-rect.left)*w/(rect.width||w),y=(e.clientY-rect.top)*h/(rect.height||h);return{x,y,step:first()+(x-keyW)/cellW(),pitch:clamp(v.highPitch-Math.floor((y-top)/rowH),0,127)};}
+  function noteRect(n){return{x:keyW+(n.start-first())*cellW(),y:top+(v.highPitch-n.pitch)*rowH+2,width:n.duration*cellW(),height:rowH-4};}
+  function hit(c){return [...b.notes].reverse().find(n=>{const r=noteRect(n);return c.x>=r.x&&c.x<=r.x+r.width&&c.y>=r.y&&c.y<=r.y+r.height;});}
+  function showPosition(position,follow=true){
+    if(follow&&transport?.id===b.id&&(position<first()||position>=first()+steps()*4)){
+      v.left=clamp(Math.floor(position/steps()/4)*4,0,maxLeft());syncScroll();paint();
     }
-    c.fillStyle = "#edf3e8"; c.fillRect(keyW, 0, w - keyW, top);
+    const x=keyW+(position-first())*cellW();line.hidden=x<keyW||x>w;line.style.left=x+"px";line.style.top="29px";line.style.height=(h-41)+"px";seekHandle.hidden=line.hidden;seekHandle.style.left=(x-8)+"px";
+  }
+  canvas.updatePlayhead=showPosition;
+  function paint(){
+    const c=canvas.getContext("2d");if(!c)return;
+    c.clearRect(0,0,w,h);c.fillStyle="#fafbf7";c.fillRect(0,0,w,h);
+    const stepCount=steps(),cell=cellW();
+    for(let r=0;r<rows;r++){
+      const pitch=v.highPitch-r,y=top+r*rowH;
+      c.fillStyle=[1,3,6,8,10].includes(pitch%12)?"#edf0e9":"#fafbf7";c.fillRect(keyW,y,w-keyW,rowH);
+      c.fillStyle="#fff";c.fillRect(0,y,keyW-1,rowH);c.fillStyle="#53695f";c.font="11px sans-serif";c.fillText(midiPitch(pitch),5,y+13);
+      c.strokeStyle="#e4e9df";c.beginPath();c.moveTo(0,y+rowH);c.lineTo(w,y+rowH);c.stroke();
+    }
+    c.fillStyle="#edf3e8";c.fillRect(keyW,0,w-keyW,top);
+    c.save();c.beginPath();c.rect(keyW,0,w-keyW,h);c.clip();
     for(let bar=Math.floor(v.left);bar<Math.ceil(v.left+4);bar++){
-      const x=keyW+(bar*steps-first())*cell;
-      c.fillStyle="#e6eee7";c.fillRect(Math.max(keyW,x+1),2,Math.max(0,Math.min(w,x+steps*cell-1)-Math.max(keyW,x+1)),26);
+      const x=keyW+(bar*stepCount-first())*cell,width=stepCount*cell;
+      const chosen=(v.noteSelection||drag?.mode==="loop")&&bar*stepCount>=v.loopA&&bar*stepCount<v.loopB;
+      c.fillStyle=chosen?"#bed4c5":bar>=b.bars?"#f0f1ec":"#e6eee7";c.fillRect(x+1,2,width-2,26);
+      c.fillStyle="#425c4e";c.font="12px sans-serif";c.fillText(String(bar+1),x+8,20);
     }
-    if (v.noteSelection || drag?.mode === "loop") {
-      const loopLeft = clamp(keyW + (v.loopA - first()) * cell, keyW, w);
-      const loopRight = clamp(keyW + (v.loopB - first()) * cell, keyW, w);
-      c.fillStyle = "#d4e4cd"; c.fillRect(loopLeft, 0, Math.max(0, loopRight - loopLeft), 22);
+    const unit=b.meter==="6/8"?2:4;
+    for(let s=Math.ceil(first()/b.snap)*b.snap;s<=first()+stepCount*4;s+=b.snap){
+      const x=keyW+(s-first())*cell;c.strokeStyle=s%stepCount===0?"#8ba494":s%unit===0?"#c6d2c5":"#e1e8dc";c.lineWidth=s%stepCount===0?1.2:.5;
+      c.beginPath();c.moveTo(x,32);c.lineTo(x,h-12);c.stroke();
+      if(s%unit===0){c.fillStyle="#7c8f7d";c.font="10px sans-serif";c.fillText(String(Math.floor((s%stepCount)/unit)+1),x+3,49);}
     }
-    const unit = b.meter === "6/8" ? 2 : 4;
-    for (let i = 0; i <= visibleSteps(); i += b.snap) {
-      const s = first() + i; const x = keyW + i * cell;
-      c.strokeStyle = s % steps < .001 ? "#769588" : s % unit < .001 ? "#b5c6b8" : "#e1e7dc";
-      c.lineWidth = s % steps < .001 ? 1.5 : .5; c.beginPath(); c.moveTo(x, top); c.lineTo(x, top + rows * rowH); c.stroke();
-      if (Math.abs(s % steps) < .001) {
-        c.fillStyle = "#356b58"; c.font = "bold 12px sans-serif"; c.fillText("" + (Math.floor(s / steps) + 1), x + 3, 17);
-        const secs = s * 60 / b.bpm / 4; c.font = "10px sans-serif"; c.fillStyle = "#7b8b80"; c.fillText(Math.floor(secs / 60) + ":" + String(Math.floor(secs % 60)).padStart(2, "0"), x + 3, 34);
-      }
-      if (i % 1 === 0 && cell >= 5) {
-        const label = s % unit < .001 ? Math.floor(s % steps / unit) + 1 : unit === 4 ? ["", "e", "&", "a"][Math.floor(s % 4)] : "&";
-        const groupAccent = b.meter === "6/8" && Math.abs(s % steps % 6) < .001;
-        if (groupAccent) { c.fillStyle = "#c8dec2"; c.fillRect(x, 39, Math.max(10, unit * cell), 23); }
-        c.fillStyle = s % unit < .001 || label === "&" ? "#376d58" : "#99a89b"; c.font = s % unit < .001 ? "bold 10px sans-serif" : "9px sans-serif"; c.fillText(String(label), x + 1, 55);
-      }
+    c.restore();c.save();c.beginPath();c.rect(keyW,top,w-keyW,rows*rowH);c.clip();
+    for(const n of [...b.notes,...ghost]){
+      if(b.notes.includes(n)&&drag?.original?.includes(n.id)&&["move","resize","velocity"].includes(drag.mode))continue;
+      const r=noteRect(n);c.fillStyle=n.muted?"#b4bcb2":selected.has(n.id)?"#bd8e4c":"rgba(45,119,93,"+(.35+n.velocity/127*.65)+")";
+      c.fillRect(r.x,r.y,Math.max(2,r.width-1),r.height);
+      if(selected.has(n.id)){c.strokeStyle="#805b21";c.lineWidth=2;c.strokeRect(r.x,r.y,Math.max(2,r.width-1),r.height);}
     }
-    c.save(); c.beginPath(); c.rect(keyW, top, w - keyW, rows * rowH); c.clip();
-    for (const n of [...b.notes, ...ghost]) {
-      if (b.notes.includes(n) && drag?.original?.includes(n.id) && ["move", "resize", "velocity"].includes(drag.mode)) continue;
-      const r = noteRect(n); c.fillStyle = "rgba(45,119,93," + (.35 + n.velocity / 127 * .65) + ")"; c.fillRect(r.x, r.y, Math.max(2, r.width - 1), r.height);
-      if (selected.has(n.id)) { c.strokeStyle = "#bd8e4c"; c.lineWidth = 2; c.strokeRect(r.x, r.y, Math.max(2, r.width - 1), r.height); }
-    }
-    if (selectionRect) { c.fillStyle = "#b3cfc440"; c.fillRect(selectionRect.x, selectionRect.y, selectionRect.width, selectionRect.height); c.strokeStyle = "#649f88"; c.strokeRect(selectionRect.x, selectionRect.y, selectionRect.width, selectionRect.height); }
-    c.restore();
-    const cursorX = keyW + (v.cursor - first()) * cell;
-    if (cursorX >= keyW && cursorX <= w) { c.strokeStyle = "#7caf97"; c.lineWidth = 2; c.beginPath(); c.moveTo(cursorX, top); c.lineTo(cursorX, top + rows * rowH); c.stroke(); }
-    c.fillStyle = "#587361"; c.font = "12px sans-serif"; c.fillText("音符 " + b.notes.length + " · 可见四小节 · 起点 " + (Math.floor(v.start / steps) + 1), 10, h - 4);
-    if (drag?.mode === "velocity" && ghost.length) { c.fillStyle = "#285d49"; c.fillText("力度 " + ghost[0].velocity, clamp(drag.last.x, 0, w - 90), clamp(drag.last.y - 10, 20, h - 10)); }
+    if(selectionRect){c.fillStyle="#b3cfc440";c.fillRect(selectionRect.x,selectionRect.y,selectionRect.width,selectionRect.height);c.strokeStyle="#649f88";c.strokeRect(selectionRect.x,selectionRect.y,selectionRect.width,selectionRect.height);}
+    c.restore();showPosition(v.cursor,false);
+    hint.textContent=(v.noteSelection?"循环：选中小节":"循环：全部 "+b.bars+" 小节")+" · 顶部框选循环 · 标尺点击或拖动定位播放 · 音区上下滚动"+(editable?" · 空白拖绘音符 · 点击选中后编辑时值、力度和静音 · 拖动右边缘调整时值":" · 点击音符切换静音");
   }
-  canvas.paint = paint;
-  const observer = new ResizeObserver(() => {
-    w = Math.max(320, Math.round(wrap.clientWidth)); const dpr = window.devicePixelRatio || 1;
-    canvas.width = w * dpr; canvas.height = h * dpr; canvas.style.width = w + "px"; canvas.style.height = h + "px"; canvas.getContext("2d").setTransform(dpr, 0, 0, dpr, 0, 0); syncScroll(); paint();
-  }); observer.observe(wrap);
-  const cleanup = new MutationObserver(() => { if (!canvas.isConnected) { observer.disconnect(); cleanup.disconnect(); } }); cleanup.observe($("blocks"), { childList: true, subtree: true });
-  canvas.onpointerdown = e => {
-    activeBlock = b; canvas.focus(); const c = coords(e); e.preventDefault(); canvas.setPointerCapture(e.pointerId);
-    if(c.x<keyW && c.y>=top && c.y<top+rows*rowH){
-      b.mutedPitches ||= []; b.mutedPitches=b.mutedPitches.includes(c.pitch) ? b.mutedPitches.filter(p=>p!==c.pitch) : [...b.mutedPitches,c.pitch];changed();paint();return;
+  canvas.paint=paint;
+  function seek(c){stop();v.start=clamp(snap(c.step),0,total()-b.snap);v.cursor=v.start;changed();paint();}
+  canvas.onpointerdown=e=>{
+    if(e.button!==undefined&&e.button!==0)return;
+    activeBlock=b;canvas.focus();const c=coords(e);if(c.x<keyW||c.y>h-12)return;
+    e.preventDefault();canvas.setPointerCapture?.(e.pointerId);
+    if(c.y<28){
+      stop();const bar=clamp(Math.floor(c.step/steps()),0,b.bars-1);drag={mode:"loop",bar,previous:v.noteSelection?{...v.noteSelection}:null};v.loopA=bar*steps();v.loopB=(bar+1)*steps();paint();return;
     }
-    if (c.y < top && c.x >= keyW) {
-      stop();
-      if (c.y < 28) {
-        const bar=clamp(Math.floor(c.step/meterSteps(b)),0,b.bars-1);
-        drag={mode:"loop",c,bar,previous:v.noteSelection ? {...v.noteSelection} : null};
-        v.loopA=bar*meterSteps(b);v.loopB=(bar+1)*meterSteps(b);paint();return;
-      }
-      v.start = clamp(v.origin === "bar" ? Math.floor(c.step / meterSteps(b)) * meterSteps(b) : Math.max(0, snap(c.step)), 0, b.bars * meterSteps(b) - b.snap);
-      v.cursor = v.start; changed(); paint(); return;
-    }
-    if (v.hand) { stop(); drag = { mode: "pan", c, left: v.left }; canvas.style.cursor = "grabbing"; return; }
-    if (!editing || c.x < keyW || c.y > top + rows * rowH) return;
-    const n = hit(c);
-    if (n) {
-      if (e.shiftKey) { selected.has(n.id) ? selected.delete(n.id) : selected.add(n.id); paint(); return; }
-      if (!selected.has(n.id)) { selected.clear(); selected.add(n.id); }
-      const picked = b.notes.filter(x => selected.has(x.id)); const r = noteRect(n);
-      const mode = e.ctrlKey || e.metaKey ? "velocity" : e.altKey ? "copy" : c.x > r.x + r.width - Math.min(5, r.width / 3) ? "resize" : "move";
-      drag = { mode, c, original: picked.map(x => x.id), notes: clone(picked), last: c }; ghost = clone(picked);
-      if (mode === "copy") ghost.forEach(n => n.id = uid());
-    } else if (v.tool === "select") { drag = { mode: "select", c }; }
-    else {
-      selected.clear(); const start = Math.max(0, Math.floor(c.step / b.snap) * b.snap);
-      ghost = [{ id: uid(), pitch: c.pitch, start, duration: b.snap, velocity: 90 }]; drag = { mode: "draw", c, start };
-    }
-    paint();
+    if(c.y<top){drag={mode:"seek"};seek(c);return;}
+    const n=hit(c);
+    if(!editable){if(n){stop();n.muted=!n.muted;changed();paint();}return;}
+    stop();
+    if(n){
+      if(e.shiftKey){selected.has(n.id)?selected.delete(n.id):selected.add(n.id);selectionControls();paint();return;}
+      if(!selected.has(n.id)){selected.clear();selected.add(n.id);}
+      const picked=b.notes.filter(note=>selected.has(note.id)),r=noteRect(n);
+      const mode=e.ctrlKey||e.metaKey?"velocity":e.altKey?"copy":c.x>r.x+r.width-Math.min(6,r.width/3)?"resize":"move";
+      drag={mode,c,original:picked.map(note=>note.id),notes:clone(picked),last:c};ghost=clone(picked);if(mode==="copy")ghost.forEach(note=>note.id=uid());
+    }else if(v.tool==="select"){drag={mode:"select",c};}
+    else{selected.clear();const start=clamp(floorSnap(c.step),0,4096*steps()-b.snap);ghost=[{id:uid(),pitch:c.pitch,start,duration:b.snap,velocity:90,muted:false}];drag={mode:"draw",c,start};}
+    selectionControls();paint();
   };
-  canvas.onpointermove = e => {
-    const c = coords(e);
-    if (!drag) { canvas.style.cursor = v.hand ? "grab" : hit(c) ? e.altKey ? "copy" : (e.ctrlKey || e.metaKey) ? "ns-resize" : "move" : "crosshair"; return; }
-    drag.last = c;
-    if (drag.mode === "loop") {
-      const bar=clamp(Math.floor(c.step/meterSteps(b)),0,b.bars-1);
-      v.loopA=Math.min(drag.bar,bar)*meterSteps(b);
-      v.loopB=(Math.max(drag.bar,bar)+1)*meterSteps(b);paint();return;
-    }
-    if (drag.mode === "pan") { v.left = clamp(drag.left - (c.x - drag.c.x) / (w - keyW) * 4, 0, Math.max(0, b.bars - 4)); paint(); return; }
-    if (drag.mode === "select") {
-      selectionRect = { x: Math.min(c.x, drag.c.x), y: Math.min(c.y, drag.c.y), width: Math.abs(c.x - drag.c.x), height: Math.abs(c.y - drag.c.y) }; paint(); return;
-    }
-    if (drag.mode === "draw") {
-      const end = Math.max(0, Math.floor(c.step / b.snap) * b.snap); ghost[0].start = Math.min(drag.start, end); ghost[0].duration = Math.abs(end - drag.start) + b.snap;
-    } else {
-      let delta = snap(c.step - drag.c.step); delta = Math.max(delta, -Math.min(...drag.notes.map(n => n.start)));
-      const pitchDelta = clamp(c.pitch - drag.c.pitch, -Math.min(...drag.notes.map(n => n.pitch)), 127 - Math.max(...drag.notes.map(n => n.pitch)));
-      ghost.forEach((n, i) => {
-        const old = drag.notes[i];
-        if (drag.mode === "velocity") n.velocity = clamp(old.velocity + Math.round((drag.c.y - c.y) / 2), 1, 127);
-        else if (drag.mode === "resize") n.duration = Math.max(b.snap, old.duration + delta);
-        else { n.start = old.start + delta; n.pitch = old.pitch + pitchDelta; }
-      });
-    }
-    paint();
+  canvas.onpointermove=e=>{
+    if(!drag)return;const c=coords(e);drag.last=c;
+    if(drag.mode==="seek"){seek(c);return;}
+    if(drag.mode==="loop"){const bar=clamp(Math.floor(c.step/steps()),0,b.bars-1);v.loopA=Math.min(drag.bar,bar)*steps();v.loopB=(Math.max(drag.bar,bar)+1)*steps();paint();return;}
+    if(drag.mode==="select"){selectionRect={x:Math.min(c.x,drag.c.x),y:Math.min(c.y,drag.c.y),width:Math.abs(c.x-drag.c.x),height:Math.abs(c.y-drag.c.y)};paint();return;}
+    if(drag.mode==="draw"){const end=clamp(floorSnap(c.step),0,4096*steps()-b.snap);ghost[0].start=Math.min(drag.start,end);ghost[0].duration=Math.abs(end-drag.start)+b.snap;}
+    else{
+      let delta=snap(c.step-drag.c.step);delta=clamp(delta,-Math.min(...drag.notes.map(n=>n.start)),4096*steps()-Math.max(...drag.notes.map(n=>n.start+n.duration)));
+      const pitchDelta=clamp(c.pitch-drag.c.pitch,-Math.min(...drag.notes.map(n=>n.pitch)),127-Math.max(...drag.notes.map(n=>n.pitch)));
+      ghost.forEach((n,i)=>{const old=drag.notes[i];if(drag.mode==="velocity")n.velocity=clamp(old.velocity+Math.round((drag.c.y-c.y)/2),1,127);else if(drag.mode==="resize")n.duration=clamp(old.duration+snap(c.step-drag.c.step),b.snap,4096*steps()-n.start);else{n.start=old.start+delta;n.pitch=old.pitch+pitchDelta;}});
+    }paint();
   };
-  canvas.onpointerup = () => {
-    if (!drag) return;
-    if (drag.mode === "select" && selectionRect) {
-      selected.clear(); b.notes.forEach(n => { const r = noteRect(n); if (r.x < selectionRect.x + selectionRect.width && r.x + r.width > selectionRect.x && r.y < selectionRect.y + selectionRect.height && r.y + r.height > selectionRect.y) selected.add(n.id); });
-    } else if (drag.mode === "pan") {
-      panStart(b, v); changed();
-    } else if (drag.mode === "loop") {
-      const same=drag.previous && drag.previous.a===v.loopA && drag.previous.b===v.loopB;
-      v.noteSelection=same ? null : {a:v.loopA,b:v.loopB};
-      if(same){v.loopA=0;v.loopB=b.bars*meterSteps(b);}
-      v.start = v.loopA; v.cursor = v.loopA; changed();
-    } else {
-      if (["move", "resize", "velocity"].includes(drag.mode)) b.notes = b.notes.filter(n => !drag.original.includes(n.id));
-      b.notes.push(...ghost); selected.clear(); ghost.forEach(n => selected.add(n.id));
-      b.bars = Math.max(b.bars, Math.ceil(Math.max(1, ...b.notes.map(n => n.start + n.duration)) / meterSteps(b))); if (!v.noteSelection) v.loopB = b.bars * meterSteps(b); syncScroll(); changed();
+  canvas.onpointerup=()=>{
+    if(!drag)return;
+    if(drag.mode==="select"){
+      selected.clear();if(selectionRect)b.notes.forEach(n=>{const r=noteRect(n);if(r.x<selectionRect.x+selectionRect.width&&r.x+r.width>selectionRect.x&&r.y<selectionRect.y+selectionRect.height&&r.y+r.height>selectionRect.y)selected.add(n.id);});
+    }else if(drag.mode==="loop"){
+      const same=drag.previous&&drag.previous.a===v.loopA&&drag.previous.b===v.loopB;v.noteSelection=same?null:{a:v.loopA,b:v.loopB};applyLoop();v.start=v.loopA;v.cursor=v.start;changed();
+    }else if(drag.mode!=="seek"){
+      if(["move","resize","velocity"].includes(drag.mode))b.notes=b.notes.filter(n=>!drag.original.includes(n.id));
+      b.notes.push(...ghost);selected.clear();ghost.forEach(n=>selected.add(n.id));b.bars=Math.max(b.bars,Math.ceil(Math.max(1,...b.notes.map(n=>n.start+n.duration))/steps()));applyLoop();changed();
     }
-    ghost = []; drag = null; selectionRect = null; canvas.style.cursor = v.hand ? "grab" : "crosshair"; paint();
+    drag=null;ghost=[];selectionRect=null;syncScroll();selectionControls();paint();
   };
-  canvas.onpointercancel = () => { if(drag?.mode === "loop"){v.noteSelection=drag.previous;v.loopA=drag.previous?.a || 0;v.loopB=drag.previous?.b || b.bars*meterSteps(b);} drag = null; ghost = []; selectionRect = null; paint(); };
-  canvas.ondblclick = e => { if (!editing) return; const n = hit(coords(e)); if (n) { b.notes = b.notes.filter(x => x !== n); changed(); paint(); } };
-  canvas.onkeydown = e => { if(e.key === "Escape"){stop();v.noteSelection=null;v.loopA=0;v.loopB=b.bars*meterSteps(b);v.start=0;v.cursor=0;paint();} if (["Delete", "Backspace"].includes(e.key) && editing) { e.preventDefault(); b.notes = b.notes.filter(n => !selected.has(n.id)); selected.clear(); changed(); paint(); } };
+  canvas.onpointercancel=()=>{if(drag?.mode==="loop"){v.noteSelection=drag.previous;applyLoop();}drag=null;ghost=[];selectionRect=null;selectionControls();paint();};
+  canvas.onkeydown=e=>{
+    if(e.key==="Escape"){stop();v.noteSelection=null;applyLoop();v.start=0;v.cursor=0;selected.clear();selectionControls();paint();}
+    if(editable&&["Delete","Backspace"].includes(e.key)){e.preventDefault();stop();b.notes=b.notes.filter(n=>!selected.has(n.id));selected.clear();changed();selectionControls();paint();}
+  };
+  seekHandle.onpointerdown=e=>canvas.onpointerdown(e);
+  seekHandle.onpointermove=e=>canvas.onpointermove(e);
+  seekHandle.onpointerup=e=>canvas.onpointerup(e);
+  seekHandle.onkeydown=e=>{if(!["ArrowLeft","ArrowRight"].includes(e.key))return;e.preventDefault();stop();v.start=clamp(v.cursor+(e.key==="ArrowRight"?b.snap:-b.snap),0,total()-b.snap);v.cursor=v.start;changed();paint();};
+  function resize(){w=Math.max(260,Math.round(wrap.clientWidth-20)||900);const ratio=window.devicePixelRatio||1;stage.style.width=w+"px";canvas.width=Math.round(w*ratio);canvas.height=Math.round(h*ratio);canvas.style.width=w+"px";canvas.style.height=h+"px";canvas.getContext("2d")?.setTransform(ratio,0,0,ratio,0,0);syncScroll();paint();}
+  selectionControls();resize();
+  if(typeof ResizeObserver!=="undefined"){
+    const observer=new ResizeObserver(resize);observer.observe(wrap);
+    const cleanup=new MutationObserver(()=>{if(!canvas.isConnected){observer.disconnect();cleanup.disconnect();}});cleanup.observe($("blocks"),{childList:true,subtree:true});
+  }
 }
+
 function midiPitch(p) {
   return (
     ["C", "C♯", "D", "D♯", "E", "F", "F♯", "G", "G♯", "A", "A♯", "B"][p % 12] +
@@ -311,6 +325,7 @@ function midiPitch(p) {
 }
 
 function midiSound(n, time, duration, bus) {
+  if (n.muted) return;
   const gain = ctx.createGain();
   gain.connect(bus);
   gain.gain.setValueAtTime(0, time);

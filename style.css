@@ -1149,3 +1149,32 @@ aside{overflow-y:auto}
 .content-part textarea{width:100%;min-height:120px;box-sizing:border-box}
 .midi-settings{margin:8px 0}.midi-settings .midi-options{padding:10px}
 .midi-canvas-wrap{min-width:0;overflow:hidden}
+/* 每块白板自己的边缘菜单 */
+.knowledge-board{position:relative;padding-left:58px}
+.board-local-tools{position:absolute;left:10px;top:66px;z-index:25;display:flex;flex-direction:column;gap:6px}
+.board-add-menu{position:relative}
+.board-add-menu>summary{list-style:none;display:grid;place-items:center;width:36px;height:36px;border-radius:50%;background:#e2eddf;color:#42654e;font-size:24px;cursor:pointer}
+.board-add-menu>summary::-webkit-details-marker{display:none}
+.board-add-options{position:absolute;left:42px;top:0;width:150px;padding:8px;background:#fff;border:1px solid #d2decd;border-radius:9px;box-shadow:0 6px 20px #26422b22}
+.board-add-options button{display:block;width:100%;text-align:left;margin:2px 0;border:0;background:transparent}
+.board-options-button{padding:5px;border:0;background:transparent}
+.board-name{min-width:0;overflow-wrap:anywhere;width:100%;outline-offset:4px}
+.board-name[tabindex]{cursor:text}
+.board-name[contenteditable="true"]{outline:1px solid #7c9d83;border-radius:4px}
+.new-board-entry{display:block;width:100%;margin:18px 0;padding:12px;border:0;background:transparent;color:#67806d}
+.whiteboard-content:not(.content-active) .edit-only{visibility:hidden;pointer-events:none}
+.whiteboard-content:not(.content-active) .content-drag-handle,.whiteboard-content:not(.content-active) .content-resize-handle{visibility:hidden}
+.whiteboard-content:not(.content-active) .whiteboard-content-head input{pointer-events:none;border-color:transparent;background:transparent}
+.midi-roll-viewport{position:relative;min-width:0;overflow:hidden;padding-right:20px}
+.midi-roll-stage{position:relative}
+.midi-pitch-scroll{position:absolute;right:0;top:65px;width:18px;height:475px;overflow-y:scroll;overflow-x:hidden;background:#edf2e9;border-radius:4px}
+.midi-pitch-scroll::-webkit-scrollbar{width:14px}
+.midi-pitch-scroll::-webkit-scrollbar-thumb{background:#a2b9a1;border-radius:7px;border:2px solid #edf2e9}
+.midi-playhead{pointer-events:none}
+.midi-canvas,.drum-roll-canvas{touch-action:none}
+.note-inspector{display:flex;gap:12px;align-items:center;flex-wrap:wrap;padding:10px;background:#f3f5ea;border-radius:8px;margin:8px 0}
+.note-inspector[hidden]{display:none}
+.note-inspector input{width:85px}
+@media(max-width:640px){.knowledge-board{padding-left:45px}.board-local-tools{left:4px}.board-add-menu>summary{width:34px;height:34px}.board-add-options{left:36px}.midi-options{flex-wrap:wrap}}
+.playhead-seek-handle{position:absolute;top:31px;width:16px;height:25px;padding:0;border:0;background:transparent;color:#9c584e;z-index:4;touch-action:none;cursor:ew-resize;font-size:14px}
+.playhead-seek-handle[hidden]{display:none}
