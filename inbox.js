@@ -19,11 +19,21 @@
   async function load(){
     const list=document.querySelector(".yun-inbox-list"); list.innerHTML='<div class="yun-inbox-empty">正在读取最近收集…</div>';
     try{
-      const r=await fetch(API+"/api/recent-json",{credentials:"include",cache:"no-store"});
+      let token=localStorage.getItem("yunInboxSession")||"";
+      let r=await fetch(API+"/api/recent-json",{headers:token?{Authorization:"Bearer "+token}:{},cache:"no-store"});
+      if(r.status===401){
+        const secret=prompt("首次连接收集箱，请输入 YUN 安全密钥：");
+        if(!secret) throw Error("尚未连接 YUN 收集箱");
+        const lr=await fetch(API+"/api/yun-login",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({secret})});
+        const ld=await lr.json();
+        if(!lr.ok||!ld.token) throw Error(ld.error||"连接失败");
+        token=ld.token; localStorage.setItem("yunInboxSession",token);
+        r=await fetch(API+"/api/recent-json",{headers:{Authorization:"Bearer "+token},cache:"no-store"});
+      }
       if(!r.ok) throw Error("HTTP "+r.status);
       const data=await r.json(); items=Array.isArray(data.items)?data.items:[]; render();
     }catch(e){
-      list.innerHTML=`<div class="yun-inbox-empty"><b>收集箱界面已经就位</b><br>等待 Worker 开放 <code>/api/recent-json</code> 后，这里会直接显示百度网盘最近收集。<br><small>${esc(e.message)}</small></div>`;
+      list.innerHTML=`<div class="yun-inbox-empty"><b>收集箱界面已经就位</b><br>连接失败。请确认 Worker 已部署收集箱接口，然后刷新重试。<br><small>${esc(e.message)}</small></div>`;
     }
   }
   function render(){
