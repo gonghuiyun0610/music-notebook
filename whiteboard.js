@@ -396,7 +396,19 @@ function boardContent(b, list, owner) {
       if(b.collapsed){
         e.preventDefault(); e.stopPropagation();
         owner.children.forEach(c=>{ if(c.id!==b.id && c.id===boardActiveContent) c.collapsed=true; });
-        b.collapsed=false; boardActiveContent=b.id; boardSelectedKnowledge=owner.id; changed(); redraw(); return;
+        b.collapsed=false; boardActiveContent=b.id; boardSelectedKnowledge=owner.id; changed(); redraw();
+        // V6.2：保持模块最后位置/大小不变，只把视口滚回模块标题栏，确保大型 MIDI/鼓模块一展开就能抓住顶部拖动区。
+        requestAnimationFrame(()=>requestAnimationFrame(()=>{
+          const restored=document.querySelector(`[data-content-id="${b.id}"]`);
+          const vp=restored?.closest?.(".knowledge-board-scroll");
+          if(!restored||!vp)return;
+          const scale=boardView(owner.id).scale||1;
+          const dockSpace=owner.dockCollapsed?64:286;
+          vp.scrollLeft=Math.max(0,layout.x*scale-dockSpace-18);
+          vp.scrollTop=Math.max(0,layout.y*scale-18);
+          const v=boardView(owner.id);v.left=vp.scrollLeft;v.top=vp.scrollTop;
+        }));
+        return;
       }
       boardActivate(b.id); boardSelectedKnowledge = owner.id;
     }, true);
@@ -712,7 +724,21 @@ function renderBoard(b, list) {
       const frame=el("div",{class:"board-module-thumb-frame",title:"点击恢复到上次编辑的位置和大小"});
       frame.style.width=Math.max(72,l.width*scale)+"px";
       frame.style.height=Math.max(54,l.height*scale)+"px";
-      frame.append(node);dockList.append(frame);
+      const del=button("×",e=>{
+        e?.preventDefault?.();e?.stopPropagation?.();
+        const d=el("dialog",{class:"module-delete-dialog"},[
+          el("h2",{text:"删除这个模块？"}),
+          el("p",{text:"只会删除白板中的这个模块，不会删除百度网盘里的原始素材。"})
+        ]);
+        const actions=el("div",{class:"module-delete-actions"});
+        actions.append(
+          button("取消",()=>d.close(),"secondary"),
+          button("删除",()=>{d.close();removeKnowledgeItem(child.id);redraw();},"danger")
+        );
+        d.append(actions);d.onclose=()=>d.remove();document.body.append(d);d.showModal();
+      },"board-module-thumb-delete");
+      del.setAttribute("aria-label","删除模块");del.title="删除模块";
+      frame.append(node,del);dockList.append(frame);
     }else surface.append(node);
   });
   if (!b.children.length)
