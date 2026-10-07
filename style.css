@@ -1337,3 +1337,41 @@ dialog::backdrop{background:#34405420}
 .board-editing .whiteboard-content:not(.content-collapsed) .whiteboard-content-head.naming input{
   cursor:text;
 }
+
+/* ===== V6 模块收纳栏 ===== */
+.knowledge-board-scroll{position:relative;}
+.board-stage{position:relative;z-index:30;}
+/* 模块栏固定在白板视口左上方；横向/纵向滚动时仍停留在可见区域。 */
+.board-module-dock{
+  position:sticky;
+  left:10px;
+  top:10px;
+  z-index:20;
+  float:left;
+  width:264px;
+  max-height:calc(100vh - 235px);
+  margin:10px 0 -10000px 10px;
+  padding:8px;
+  border:1px solid #dce3e8;
+  border-radius:12px;
+  background:rgba(250,252,253,.96);
+  box-shadow:0 8px 26px #2634421c;
+  backdrop-filter:blur(10px);
+  box-sizing:border-box;
+  transition:width .18s ease,padding .18s ease,opacity .18s ease;
+}
+.board-module-dock-head{height:34px;display:flex;align-items:center;justify-content:space-between;gap:8px;padding:0 2px 6px;font-size:13px;color:#354454;}
+.board-module-dock-toggle{width:28px;height:28px;padding:0;border:0;border-radius:7px;background:#edf2f5;color:#354454;font-size:20px;line-height:1;cursor:pointer;}
+.board-module-dock-list{display:flex;flex-direction:column;gap:10px;max-height:calc(100vh - 290px);overflow:auto;padding:2px;}
+.board-module-thumb-frame{position:relative;flex:none;overflow:hidden;border:1px solid #e0e5e9;border-radius:9px;background:white;box-shadow:0 2px 8px #1f29370f;cursor:pointer;}
+.board-module-thumb-frame>.whiteboard-content.content-collapsed{position:absolute!important;margin:0!important;}
+.board-module-dock.dock-folded{width:46px;padding:7px 6px;}
+.board-module-dock.dock-folded .board-module-dock-head{height:auto;min-height:118px;padding:0;flex-direction:column-reverse;justify-content:flex-end;}
+.board-module-dock.dock-folded .board-module-dock-head strong{writing-mode:vertical-rl;letter-spacing:2px;font-size:12px;font-weight:600;}
+.board-module-dock.dock-folded .board-module-dock-list{display:none;}
+/* 正在编辑的白板内容属于内容层，永远不会被模块栏盖住。 */
+.board-editing .whiteboard-content.content-active{z-index:1200!important;box-shadow:0 10px 30px #1f29372a;}
+.board-editing .whiteboard-content.moving{z-index:1300!important;}
+/* 新增/更多工具高于所有白板内容，始终可操作。 */
+.board-local-tools{z-index:1400!important;}
+@media(max-width:700px){.board-module-dock{width:220px}.board-module-thumb-frame{max-width:194px}}

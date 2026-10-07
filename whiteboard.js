@@ -404,26 +404,18 @@ function boardContent(b, list, owner) {
   const layout = b.layout;
   function apply() {
     if(editing && b.collapsed){
-      // V5：收纳不是“裁掉一块”，而是把整个模块等比例缩成鸟瞰缩略图。
-      // 保留模块原始宽高，让内部所有组件仍按展开状态排版，再整体 scale 到停靠区。
-      const docked=owner.children.filter(c=>c.collapsed);
-      const i=Math.max(0,docked.findIndex(c=>c.id===b.id));
-      const maxW=280, maxH=160;
+      // V6：收纳模块进入独立“模块栏”。原始 layout 完全不改，展开时恢复最后位置/大小。
+      // 这里只负责生成完整鸟瞰缩略图；位置与占位尺寸由模块栏 wrapper 管理。
+      const maxW=236, maxH=148;
       const scale=Math.min(1,maxW/Math.max(1,layout.width),maxH/Math.max(1,layout.height));
-      let dockY=18;
-      for(let n=0;n<i;n++){
-        const c=docked[n], l=c.layout||BOARD_DEFAULTS[c.type]||{width:320,height:180};
-        const cs=Math.min(1,maxW/Math.max(1,l.width),maxH/Math.max(1,l.height));
-        dockY+=Math.max(58,l.height*cs)+14;
-      }
-      section.style.left="16px";
-      section.style.top=dockY+"px";
+      section.style.left="0px";
+      section.style.top="0px";
       section.style.width=layout.width+"px";
       section.style.height=layout.height+"px";
       section.style.transformOrigin="top left";
       section.style.transform=`scale(${scale})`;
       section.style.setProperty("--dock-scale",String(scale));
-      section.style.zIndex=String(500+i);
+      section.style.zIndex="1";
     }else{
       section.style.left = layout.x + "px"; section.style.top = layout.y + "px";
       section.style.width = layout.width + "px"; section.style.height = layout.height + "px";
@@ -702,7 +694,31 @@ function renderBoard(b, list) {
     boardCollapseActive(b);
   });
   const ordered = editing ? b.children : [...b.children].sort((a,c)=>a.layout.y-c.layout.y || a.layout.x-c.layout.x);
-  ordered.forEach(child=>surface.append(boardContent(child,b.children,b)));
+  // V6 模块栏：收纳模块不再占据白板坐标层，避免遮挡边缘组件。
+  // dockCollapsed 只控制“栏”的展开/折叠，不改变每个组件自己的 collapsed 状态。
+  let dock=null, dockList=null;
+  if(editing){
+    dock=el("aside",{class:"board-module-dock"+(b.dockCollapsed?" dock-folded":""),"aria-label":"模块收纳栏"});
+    const dockHead=el("div",{class:"board-module-dock-head"});
+    dockHead.append(
+      el("strong",{text:"模块 ("+b.children.filter(c=>c.collapsed).length+")"}),
+      button(b.dockCollapsed?"›":"‹",()=>{b.dockCollapsed=!b.dockCollapsed;changed();redraw();},"board-module-dock-toggle")
+    );
+    dock.append(dockHead);
+    dockList=el("div",{class:"board-module-dock-list"});
+    dock.append(dockList);
+  }
+  ordered.forEach(child=>{
+    const node=boardContent(child,b.children,b);
+    if(editing && child.collapsed){
+      const l=child.layout||BOARD_DEFAULTS[child.type]||{width:320,height:180};
+      const scale=Math.min(1,236/Math.max(1,l.width),148/Math.max(1,l.height));
+      const frame=el("div",{class:"board-module-thumb-frame",title:"点击恢复到上次编辑的位置和大小"});
+      frame.style.width=Math.max(72,l.width*scale)+"px";
+      frame.style.height=Math.max(54,l.height*scale)+"px";
+      frame.append(node);dockList.append(frame);
+    }else surface.append(node);
+  });
   if (!b.children.length)
     surface.append(
       el("p", {
@@ -750,7 +766,10 @@ function renderBoard(b, list) {
   if (editing) {
     /* 收集箱与本机文件的 drop 已统一在上方处理。 */
   }
-  const stage=el("div",{class:"board-stage"});stage.append(surface);viewport.append(stage);
+  const stage=el("div",{class:"board-stage"});stage.append(surface);
+  // 模块栏是视口 UI，不属于白板坐标内容；因此白板缩放/滚动不会改变它的尺寸。
+  if(editing && dock) viewport.append(dock);
+  viewport.append(stage);
   if(editing)boardScaleSurface(viewport,surface,b);
   section.append(viewport);
   requestAnimationFrame(()=>{viewport.scrollLeft=view.left;viewport.scrollTop=view.top;});
