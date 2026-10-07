@@ -404,13 +404,30 @@ function boardContent(b, list, owner) {
   const layout = b.layout;
   function apply() {
     if(editing && b.collapsed){
+      // V5：收纳不是“裁掉一块”，而是把整个模块等比例缩成鸟瞰缩略图。
+      // 保留模块原始宽高，让内部所有组件仍按展开状态排版，再整体 scale 到停靠区。
       const docked=owner.children.filter(c=>c.collapsed);
       const i=Math.max(0,docked.findIndex(c=>c.id===b.id));
-      section.style.left="16px"; section.style.top=(18+i*112)+"px";
-      section.style.width="260px"; section.style.height="96px"; section.style.zIndex=String(500+i);
+      const maxW=280, maxH=160;
+      const scale=Math.min(1,maxW/Math.max(1,layout.width),maxH/Math.max(1,layout.height));
+      let dockY=18;
+      for(let n=0;n<i;n++){
+        const c=docked[n], l=c.layout||BOARD_DEFAULTS[c.type]||{width:320,height:180};
+        const cs=Math.min(1,maxW/Math.max(1,l.width),maxH/Math.max(1,l.height));
+        dockY+=Math.max(58,l.height*cs)+14;
+      }
+      section.style.left="16px";
+      section.style.top=dockY+"px";
+      section.style.width=layout.width+"px";
+      section.style.height=layout.height+"px";
+      section.style.transformOrigin="top left";
+      section.style.transform=`scale(${scale})`;
+      section.style.setProperty("--dock-scale",String(scale));
+      section.style.zIndex=String(500+i);
     }else{
       section.style.left = layout.x + "px"; section.style.top = layout.y + "px";
       section.style.width = layout.width + "px"; section.style.height = layout.height + "px";
+      section.style.transform=""; section.style.transformOrigin=""; section.style.removeProperty("--dock-scale");
       section.style.zIndex=String(layout.z||0);
     }
   }

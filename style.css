@@ -1295,22 +1295,45 @@ dialog::backdrop{background:#34405420}
 
 .whiteboard-content-head input{flex-shrink:1}
 .board-overview .knowledge-board{pointer-events:none}
-/* V3 模块自动收纳：编辑完成后点击白板空白处，当前模块停靠到左侧。 */
-.board-editing .whiteboard-content.content-collapsed{cursor:pointer;border-color:#d8dde2;border-radius:12px;box-shadow:0 3px 12px #1f293714;transition:left .2s ease,top .2s ease,width .2s ease,height .2s ease,box-shadow .2s ease;overflow:hidden}
-.board-editing .whiteboard-content.content-collapsed:hover{box-shadow:0 7px 22px #1f293722;transform:translateY(-1px)}
-.board-editing .whiteboard-content.content-collapsed .whiteboard-content-head{height:31px;padding:3px 7px;background:#fff;border-bottom:1px solid #edf0f2}
-.board-editing .whiteboard-content.content-collapsed .whiteboard-content-head input{font-weight:650;border:0;background:transparent;padding:2px 4px;pointer-events:none}
-.board-editing .whiteboard-content.content-collapsed .content-drag-handle,.board-editing .whiteboard-content.content-collapsed .whiteboard-content-head>button{display:none}
-.board-editing .whiteboard-content.content-collapsed .whiteboard-content-body{padding:6px 8px;overflow:hidden;pointer-events:none;font-size:10px;line-height:1.25}
-.board-editing .whiteboard-content.content-collapsed .media-fields,.board-editing .whiteboard-content.content-collapsed .rich-toolbar,.board-editing .whiteboard-content.content-collapsed .controls,.board-editing .whiteboard-content.content-collapsed .hint{display:none!important}
-.board-editing .whiteboard-content.content-collapsed .whiteboard-content-body img.media{width:72px;height:50px;object-fit:cover;border-radius:6px}
-.board-editing .whiteboard-content.content-collapsed .whiteboard-content-body audio{width:210px;height:32px}
-.board-editing .whiteboard-content.content-collapsed textarea,.board-editing .whiteboard-content.content-collapsed .rich-editor{max-height:48px;min-height:0!important;overflow:hidden!important;border:0!important;padding:2px!important;background:transparent!important}
-
-/* V4：收纳卡片只保留可辨认的内容预览，不显示编辑控件。 */
-.board-editing .whiteboard-content.content-collapsed .drop-zone,
-.board-editing .whiteboard-content.content-collapsed .whiteboard-content-body>input,
-.board-editing .whiteboard-content.content-collapsed .whiteboard-content-body>button{display:none!important}
-.board-editing .whiteboard-content.content-collapsed .whiteboard-content-body{height:64px;box-sizing:border-box}
-.board-editing .whiteboard-content.content-collapsed .whiteboard-content-body img.media{display:block;width:100%;height:54px;object-fit:cover;border-radius:7px}
-.board-editing .whiteboard-content.content-collapsed .whiteboard-content-body audio{display:block;width:100%;height:34px}
+/* V5 模块自动收纳：完整鸟瞰缩略图，而不是裁切模块局部。 */
+.board-editing .whiteboard-content.content-collapsed{
+  cursor:pointer;
+  border-color:#d8dde2;
+  border-radius:12px;
+  box-shadow:0 5px 18px #1f29371c;
+  transition:left .2s ease,top .2s ease,box-shadow .2s ease,filter .2s ease;
+  overflow:hidden;
+}
+.board-editing .whiteboard-content.content-collapsed:hover{
+  box-shadow:0 10px 28px #1f29372b;
+  filter:brightness(.985);
+}
+/* 收纳时完整保留原模块的内部布局，只关闭交互；点击整张缩略图即可重新展开。 */
+.board-editing .whiteboard-content.content-collapsed .whiteboard-content-head,
+.board-editing .whiteboard-content.content-collapsed .whiteboard-content-body{
+  pointer-events:none;
+}
+.board-editing .whiteboard-content.content-collapsed .content-resize-handle{
+  display:none!important;
+}
+/* 展开状态：顶部整条标题栏都是稳定拖动区域。 */
+.board-editing .whiteboard-content:not(.content-collapsed) .whiteboard-content-head{
+  width:100%;
+  max-width:none;
+  align-self:stretch;
+  box-sizing:border-box;
+  cursor:grab;
+  touch-action:none;
+}
+.board-editing .whiteboard-content:not(.content-collapsed) .whiteboard-content-head:active{
+  cursor:grabbing;
+}
+/* 标题文字本身也属于拖动区；双击标题进入改名时才切回文本操作。 */
+.board-editing .whiteboard-content:not(.content-collapsed) .whiteboard-content-head input[readonly]{
+  cursor:grab;
+  flex:1 1 auto;
+  max-width:none;
+}
+.board-editing .whiteboard-content:not(.content-collapsed) .whiteboard-content-head.naming input{
+  cursor:text;
+}
