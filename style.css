@@ -1340,13 +1340,13 @@ dialog::backdrop{background:#34405420}
 
 /* ===== V6 模块收纳栏 ===== */
 .knowledge-board-scroll{position:relative;}
-.board-stage{position:relative;z-index:30;}
+.board-stage{position:relative;z-index:10;}
 /* 模块栏固定在白板视口左上方；横向/纵向滚动时仍停留在可见区域。 */
 .board-module-dock{
   position:sticky;
   left:10px;
   top:10px;
-  z-index:20;
+  z-index:300;
   float:left;
   width:264px;
   max-height:calc(100vh - 235px);

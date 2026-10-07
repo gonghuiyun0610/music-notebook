@@ -686,13 +686,9 @@ function renderBoard(b, list) {
     style: "width:" + b.board.width + "px;height:" + b.board.height + "px",
   });
   surface.dataset.knowledgeId = b.id;
-  if(editing) surface.addEventListener("pointerdown",e=>{
-    // 点击真正的白板空白区域（包括空白提示/舞台区域）就收纳当前模块；
-    // 只有点在内容模块本身时才不收纳。
-    if(e.target.closest?.(".whiteboard-content")) return;
-    if(e.target.closest?.("button,input,textarea,select,a,[contenteditable=true]")) return;
-    boardCollapseActive(b);
-  });
+  // V6.1：空白点击收纳改由 viewport 统一处理。
+  // 原因：只有一个大模块时，用户点击的“空白”可能落在 surface 外的可视区域；
+  // 同时模块栏本身也不应触发收纳。监听器在 viewport 创建完成后注册。
   const ordered = editing ? b.children : [...b.children].sort((a,c)=>a.layout.y-c.layout.y || a.layout.x-c.layout.x);
   // V6 模块栏：收纳模块不再占据白板坐标层，避免遮挡边缘组件。
   // dockCollapsed 只控制“栏”的展开/折叠，不改变每个组件自己的 collapsed 状态。
@@ -770,7 +766,16 @@ function renderBoard(b, list) {
   // 模块栏是视口 UI，不属于白板坐标内容；因此白板缩放/滚动不会改变它的尺寸。
   if(editing && dock) viewport.append(dock);
   viewport.append(stage);
-  if(editing)boardScaleSurface(viewport,surface,b);
+  if(editing){
+    // V6.1：无论知识块里只有 1 个还是多个模块，只要当前有展开模块，
+    // 点击白板/视口真正空白处就收纳。模块、模块栏、工具和表单控件不会误触。
+    viewport.addEventListener("pointerdown",e=>{
+      if(e.target.closest?.(".whiteboard-content,.board-module-dock,.board-local-tools")) return;
+      if(e.target.closest?.("button,input,textarea,select,a,[contenteditable=true]")) return;
+      boardCollapseActive(b);
+    });
+    boardScaleSurface(viewport,surface,b);
+  }
   section.append(viewport);
   requestAnimationFrame(()=>{viewport.scrollLeft=view.left;viewport.scrollTop=view.top;});
   viewport.addEventListener("scroll",()=>{view.left=viewport.scrollLeft;view.top=viewport.scrollTop;});
