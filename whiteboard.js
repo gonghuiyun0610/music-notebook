@@ -633,55 +633,46 @@ function renderBoard(b, list) {
           : "此知识块还没有内容。",
       }),
     );
+  // 本机文件仍只在编辑模式接收；收集箱素材在浏览/编辑模式都可拖入。
+  surface.ondragover = (e) => {
+    const inbox = Array.from(e.dataTransfer?.types || []).includes("application/x-yun-inbox");
+    const local = editing && (e.dataTransfer?.files?.length || Array.from(e.dataTransfer?.types || []).includes("Files"));
+    if (!inbox && !local) return;
+    e.preventDefault();
+    surface.classList.toggle("inbox-over", inbox);
+    surface.classList.toggle("file-over", !inbox);
+  };
+  surface.ondragleave = (e) => {
+    if (!surface.contains(e.relatedTarget)) surface.classList.remove("file-over","inbox-over");
+  };
+  surface.ondrop = async (e) => {
+    if (e.target.closest?.(".drop-zone")) return;
+    const raw=e.dataTransfer?.getData("application/x-yun-inbox");
+    if(raw){
+      e.preventDefault(); e.stopPropagation(); surface.classList.remove("inbox-over","file-over");
+      try{
+        const item=JSON.parse(raw), rect=surface.getBoundingClientRect();
+        const point={x:Math.max(0,(e.clientX-rect.left)/view.scale),y:Math.max(0,(e.clientY-rect.top)/view.scale)};
+        let type=item.type==="图片"?"image":(["录音","音频"].includes(item.type)?"audio":"text");
+        const child=boardAddContent(b,type,point); child.title=item.name||"收集箱素材";
+        child.inboxSource={id:item.id||item.fs_id||"",path:item.path||"",type:item.type||"文件"};
+        if(type==="image"||type==="audio") child.src=item.media||item.preview||item.url||"";
+        else child.content=item.type==="文字"?(item.text||item.content||item.name||""):[item.name||"文件",item.url||item.media||item.path||""].filter(Boolean).join("\n");
+        changed(); render(); status("已从收集箱加入："+(item.name||"素材"));
+      }catch(err){status("收集箱素材添加失败："+err.message);}
+      return;
+    }
+    if(!editing) return;
+    e.preventDefault(); e.stopPropagation(); surface.classList.remove("file-over");
+    const files=Array.from(e.dataTransfer?.files||[]); if(!files.length)return;
+    const rect=surface.getBoundingClientRect(), point={x:Math.max(0,(e.clientX-rect.left)/view.scale),y:Math.max(0,(e.clientY-rect.top)/view.scale)};
+    let added=0;const errors=[];
+    for(const file of files){try{await boardFileContent(b,file,{x:point.x+added*24,y:point.y+added*24});added++;}catch(error){errors.push(error.message);}}
+    if(added){changed();render();}
+    status(errors.length?errors.join("；"):"已添加 "+added+" 个素材内容块。素材已保存到本机。");
+  };
   if (editing) {
-    surface.ondragover = (e) => {
-      if (
-        !e.dataTransfer?.files?.length &&
-        !Array.from(e.dataTransfer?.types || []).includes("Files")
-      )
-        return;
-      e.preventDefault();
-      surface.classList.add("file-over");
-    };
-    surface.ondragleave = (e) => {
-      if (!surface.contains(e.relatedTarget))
-        surface.classList.remove("file-over");
-    };
-    surface.ondrop = async (e) => {
-      if (e.target.closest?.(".drop-zone")) return;
-      e.preventDefault();
-      e.stopPropagation();
-      surface.classList.remove("file-over");
-      const files = Array.from(e.dataTransfer?.files || []);
-      if (!files.length) return;
-      const rect = surface.getBoundingClientRect();
-      const point = {
-        x: Math.max(0, (e.clientX - rect.left)/view.scale),
-        y: Math.max(0, (e.clientY - rect.top)/view.scale),
-      };
-      let added = 0;
-      const errors = [];
-      for (const file of files) {
-        try {
-          await boardFileContent(b, file, {
-            x: point.x + added * 24,
-            y: point.y + added * 24,
-          });
-          added++;
-        } catch (error) {
-          errors.push(error.message);
-        }
-      }
-      if (added) {
-        changed();
-        render();
-      }
-      status(
-        errors.length
-          ? errors.join("；")
-          : "已添加 " + added + " 个素材内容块。素材已保存到本机。",
-      );
-    };
+    /* 收集箱与本机文件的 drop 已统一在上方处理。 */
   }
   const stage=el("div",{class:"board-stage"});stage.append(surface);viewport.append(stage);
   if(editing)boardScaleSurface(viewport,surface,b);
