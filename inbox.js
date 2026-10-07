@@ -1,4 +1,4 @@
-/** YUN 收集箱 V3：预览 / 播放 / 拖拽。真实数据接口：Worker GET /api/recent-json */
+/** YUN 收集箱 V4：预览 / 播放 / 拖拽。真实数据接口：Worker GET /api/recent-json */
 "use strict";
 (() => {
   const API = localStorage.getItem("yunInboxApi") || "https://yun-music-api.jgjhhjybzh.workers.dev";
@@ -50,6 +50,15 @@
     if(x.type==="图片") body.innerHTML=`<img src="${esc(src)}" alt="${esc(x.name||"")}">`;
     else if(x.type==="视频") body.innerHTML=`<video src="${esc(src)}" controls autoplay playsinline preload="metadata"></video>`;
     else if(["录音","音频"].includes(x.type)) body.innerHTML=`<audio src="${esc(src)}" controls autoplay preload="metadata"></audio>`;
+    const previewMedia=body.querySelector("audio,video");
+    if(previewMedia){
+      previewMedia.addEventListener("error",()=>{
+        const note=document.createElement("div"); note.className="yun-preview-error";
+        note.textContent="这个文件当前无法在浏览器中解码播放；素材本身仍保留在百度网盘。";
+        body.append(note);
+      },{once:true});
+      previewMedia.load?.();
+    }
     else if(x.type==="文字"){
       body.innerHTML='<div class="yun-preview-loading">正在读取文字…</div>';
       fetch(src,{cache:"no-store"}).then(r=>{if(!r.ok)throw Error("HTTP "+r.status);return r.text();}).then(t=>{body.innerHTML="";const pre=document.createElement("pre");pre.textContent=t;body.append(pre);}).catch(()=>{body.innerHTML='<div class="yun-preview-loading">暂时无法读取这份文字。</div>';});
@@ -72,8 +81,8 @@
       row.innerHTML=`<div class="yun-inbox-thumb">${thumb}</div><div class="yun-inbox-info"><div class="yun-inbox-name">${esc(x.name||"未命名素材")}</div><div class="yun-inbox-meta">${esc(x.time||"")} ${x.size?" · "+esc(x.size):""}</div></div>${playable?'<button class="yun-inbox-preview" type="button">预览</button>':""}${x.organized?'<span class="yun-inbox-badge">✓ 已整理</span>':""}`;
       drag(row,x);
       const pb=row.querySelector(".yun-inbox-preview"); if(pb){pb.draggable=false;pb.onclick=e=>{e.preventDefault();e.stopPropagation();openPreview(x);};}
-      if(["录音","音频"].includes(x.type) && x.media){const a=document.createElement("audio");a.className="yun-inbox-audio";a.src=x.media;a.controls=true;a.preload="metadata";a.draggable=false;row.append(a);}
-      if(x.type==="视频" && x.media){const v=document.createElement("video");v.className="yun-inbox-video";v.src=x.media;v.controls=true;v.playsInline=true;v.preload="metadata";v.draggable=false;row.append(v);}
+      if(["录音","音频"].includes(x.type) && x.media){const a=document.createElement("audio");a.className="yun-inbox-audio";a.src=x.media;a.controls=true;a.preload="metadata";a.draggable=false;a.onerror=()=>{a.title="浏览器暂时无法播放这个音频格式";};row.append(a);}
+      if(x.type==="视频" && x.media){const v=document.createElement("video");v.className="yun-inbox-video";v.src=x.media;v.controls=true;v.playsInline=true;v.preload="metadata";v.draggable=false;v.onerror=()=>{v.title="浏览器暂时无法播放这个视频格式";};row.append(v);}
       list.append(row);
     });
   }

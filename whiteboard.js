@@ -583,17 +583,24 @@ function boardContent(b, list, owner) {
   }
   section.querySelectorAll("textarea").forEach(input => input.readOnly = pageEditing && !contentEditing);
   if(editing){
+    // 使用捕获阶段接收收集箱拖拽：图片/音频模块内部自己的 drop-zone
+    // 会处理本机文件，捕获阶段可保证收集箱素材先被正确接住。
     section.addEventListener("dragover",e=>{
       if(!Array.from(e.dataTransfer?.types||[]).includes("application/x-yun-inbox"))return;
       e.preventDefault(); e.stopPropagation(); section.classList.add("inbox-target");
-    });
-    section.addEventListener("dragleave",e=>{if(!section.contains(e.relatedTarget))section.classList.remove("inbox-target");});
+      if(e.dataTransfer) e.dataTransfer.dropEffect="copy";
+    },true);
+    section.addEventListener("dragleave",e=>{if(!section.contains(e.relatedTarget))section.classList.remove("inbox-target");},true);
     section.addEventListener("drop",e=>{
       const raw=e.dataTransfer?.getData("application/x-yun-inbox"); if(!raw)return;
-      e.preventDefault(); e.stopPropagation(); section.classList.remove("inbox-target");
-      try{const item=JSON.parse(raw);inboxApplyToBlock(item,b);b.collapsed=false;boardActiveContent=b.id;changed();redraw();status("已放入模块："+(item.name||"素材"));}
-      catch(err){status(err.message);}
-    });
+      e.preventDefault(); e.stopPropagation(); e.stopImmediatePropagation?.(); section.classList.remove("inbox-target");
+      try{
+        const item=JSON.parse(raw);
+        inboxApplyToBlock(item,b);
+        b.collapsed=false; boardActiveContent=b.id; boardSelectedKnowledge=owner.id;
+        changed(); redraw(); status("已放入模块："+(item.name||"素材"));
+      } catch(err){status(err.message);}
+    },true);
   }
   return section;
 }
@@ -670,7 +677,13 @@ function renderBoard(b, list) {
     style: "width:" + b.board.width + "px;height:" + b.board.height + "px",
   });
   surface.dataset.knowledgeId = b.id;
-  if(editing) surface.addEventListener("pointerdown",e=>{if(e.target===surface)boardCollapseActive(b);});
+  if(editing) surface.addEventListener("pointerdown",e=>{
+    // 点击真正的白板空白区域（包括空白提示/舞台区域）就收纳当前模块；
+    // 只有点在内容模块本身时才不收纳。
+    if(e.target.closest?.(".whiteboard-content")) return;
+    if(e.target.closest?.("button,input,textarea,select,a,[contenteditable=true]")) return;
+    boardCollapseActive(b);
+  });
   const ordered = editing ? b.children : [...b.children].sort((a,c)=>a.layout.y-c.layout.y || a.layout.x-c.layout.x);
   ordered.forEach(child=>surface.append(boardContent(child,b.children,b)));
   if (!b.children.length)
