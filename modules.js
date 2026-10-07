@@ -79,7 +79,7 @@ function repairBlock(b) {
 }
 // 替代旧版的固定 16 格校验。递归检查所有子模块。
 validate = function (x) {
-  if (!x || x.version !== 1 || !Array.isArray(x.pages) || !x.pages.length)
+  if (!x || x.version !== 1 || !Array.isArray(x.pages))
     throw Error("笔记格式不正确。");
   const ids = new Set();
   function check(b, depth = 0) {

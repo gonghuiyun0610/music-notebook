@@ -21,7 +21,7 @@
       data = validate(clone(defaults));
     }
   }
-  current = data.pages[0].id;
+  current = data.pages[0]?.id || null;
   render();
   status(
     dirty ? "已恢复本机草稿 · 尚未保存到 GitHub" : "准备就绪 · 点击播放听节奏",
