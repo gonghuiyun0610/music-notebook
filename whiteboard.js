@@ -356,32 +356,67 @@ async function boardFileContent(board, file, point) {
   return child;
 }
 
+
+function inboxTypeForBlock(item){
+  if(item.type==="图片") return "image";
+  if(["录音","音频"].includes(item.type)) return "audio";
+  return "text";
+}
+function inboxApplyToBlock(item,b){
+  const wanted=inboxTypeForBlock(item);
+  if(b.type!==wanted) throw Error(wanted==="image"?"图片只能拖入图片模块":wanted==="audio"?"录音只能拖入音频模块":"这类素材请拖入文本模块或白板空白处");
+  b.title=item.name||b.title||"收集箱素材";
+  b.inboxSource={id:item.id||item.fs_id||"",path:item.path||"",type:item.type||"文件"};
+  if(wanted==="image"||wanted==="audio"){
+    b.src=item.media||item.preview||item.url||"";
+    b.caption=b.caption||item.name||"";
+  }else{
+    b.content=item.type==="文字"?(item.text||item.content||item.name||""):[item.name||"文件",item.media||item.preview||item.url||item.path||""].filter(Boolean).join("\n");
+  }
+}
+function boardCollapseActive(board){
+  if(!editing||!boardActiveContent)return false;
+  const active=board.children.find(c=>c.id===boardActiveContent);
+  if(!active)return false;
+  active.collapsed=true; boardActiveContent=null; changed(); redraw(); return true;
+}
+
 function boardContent(b, list, owner) {
   repairBlock(b);
   const pageEditing = editing;
   const contentEditing = pageEditing && b.id === boardActiveContent;
   const section = el("section", {
     id: (b.type === "group" ? "whiteboard-slot-" : "block-") + b.id,
-    class: "whiteboard-content",
+    class: "whiteboard-content" + (editing && b.collapsed ? " content-collapsed" : ""),
   });
   section.dataset.contentId = b.id;
   section.classList.toggle("content-active", contentEditing);
   if (pageEditing) {
-    section.addEventListener("pointerdown", () => {
-      boardActivate(b.id);
-      boardSelectedKnowledge = owner.id;
+    section.addEventListener("pointerdown", (e) => {
+      if(b.collapsed){
+        e.preventDefault(); e.stopPropagation();
+        owner.children.forEach(c=>{ if(c.id!==b.id && c.id===boardActiveContent) c.collapsed=true; });
+        b.collapsed=false; boardActiveContent=b.id; boardSelectedKnowledge=owner.id; changed(); redraw(); return;
+      }
+      boardActivate(b.id); boardSelectedKnowledge = owner.id;
     }, true);
   }
   const layout = b.layout;
   function apply() {
-    section.style.left = layout.x + "px";
-    section.style.top = layout.y + "px";
-    section.style.width = layout.width + "px";
-    section.style.height = layout.height + "px";
-    section.style.zIndex=String(layout.z||0);
+    if(editing && b.collapsed){
+      const docked=owner.children.filter(c=>c.collapsed);
+      const i=Math.max(0,docked.findIndex(c=>c.id===b.id));
+      section.style.left="16px"; section.style.top=(18+i*112)+"px";
+      section.style.width="260px"; section.style.height="96px"; section.style.zIndex=String(500+i);
+    }else{
+      section.style.left = layout.x + "px"; section.style.top = layout.y + "px";
+      section.style.width = layout.width + "px"; section.style.height = layout.height + "px";
+      section.style.zIndex=String(layout.z||0);
+    }
   }
   apply();
   const head = el("div", { class: "whiteboard-content-head" });
+  if(editing && b.collapsed) head.title="点击缩略卡片重新展开编辑";
   if (editing) {
     const handle = button("⠿", () => {}, "content-drag-handle");
     handle.setAttribute("aria-label", "拖动内容块");
@@ -451,7 +486,7 @@ function boardContent(b, list, owner) {
       ),
     );
   section.append(body);
-  if (editing) {
+  if (editing && !b.collapsed) {
     const resize = button("◢", () => {}, "content-resize-handle");
     resize.setAttribute("aria-label", "调整内容块大小");
     section.append(resize);
@@ -547,6 +582,19 @@ function boardContent(b, list, owner) {
     };
   }
   section.querySelectorAll("textarea").forEach(input => input.readOnly = pageEditing && !contentEditing);
+  if(editing){
+    section.addEventListener("dragover",e=>{
+      if(!Array.from(e.dataTransfer?.types||[]).includes("application/x-yun-inbox"))return;
+      e.preventDefault(); e.stopPropagation(); section.classList.add("inbox-target");
+    });
+    section.addEventListener("dragleave",e=>{if(!section.contains(e.relatedTarget))section.classList.remove("inbox-target");});
+    section.addEventListener("drop",e=>{
+      const raw=e.dataTransfer?.getData("application/x-yun-inbox"); if(!raw)return;
+      e.preventDefault(); e.stopPropagation(); section.classList.remove("inbox-target");
+      try{const item=JSON.parse(raw);inboxApplyToBlock(item,b);b.collapsed=false;boardActiveContent=b.id;changed();redraw();status("已放入模块："+(item.name||"素材"));}
+      catch(err){status(err.message);}
+    });
+  }
   return section;
 }
 
@@ -622,6 +670,7 @@ function renderBoard(b, list) {
     style: "width:" + b.board.width + "px;height:" + b.board.height + "px",
   });
   surface.dataset.knowledgeId = b.id;
+  if(editing) surface.addEventListener("pointerdown",e=>{if(e.target===surface)boardCollapseActive(b);});
   const ordered = editing ? b.children : [...b.children].sort((a,c)=>a.layout.y-c.layout.y || a.layout.x-c.layout.x);
   ordered.forEach(child=>surface.append(boardContent(child,b.children,b)));
   if (!b.children.length)
@@ -653,11 +702,8 @@ function renderBoard(b, list) {
       try{
         const item=JSON.parse(raw), rect=surface.getBoundingClientRect();
         const point={x:Math.max(0,(e.clientX-rect.left)/view.scale),y:Math.max(0,(e.clientY-rect.top)/view.scale)};
-        let type=item.type==="图片"?"image":(["录音","音频"].includes(item.type)?"audio":"text");
-        const child=boardAddContent(b,type,point); child.title=item.name||"收集箱素材";
-        child.inboxSource={id:item.id||item.fs_id||"",path:item.path||"",type:item.type||"文件"};
-        if(type==="image"||type==="audio") child.src=item.media||item.preview||item.url||"";
-        else child.content=item.type==="文字"?(item.text||item.content||item.name||""):[item.name||"文件",item.url||item.media||item.path||""].filter(Boolean).join("\n");
+        let type=inboxTypeForBlock(item);
+        const child=boardAddContent(b,type,point); inboxApplyToBlock(item,child); child.collapsed=false;
         changed(); render(); status("已从收集箱加入："+(item.name||"素材"));
       }catch(err){status("收集箱素材添加失败："+err.message);}
       return;

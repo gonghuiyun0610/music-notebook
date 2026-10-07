@@ -1295,3 +1295,14 @@ dialog::backdrop{background:#34405420}
 
 .whiteboard-content-head input{flex-shrink:1}
 .board-overview .knowledge-board{pointer-events:none}
+/* V3 模块自动收纳：编辑完成后点击白板空白处，当前模块停靠到左侧。 */
+.board-editing .whiteboard-content.content-collapsed{cursor:pointer;border-color:#d8dde2;border-radius:12px;box-shadow:0 3px 12px #1f293714;transition:left .2s ease,top .2s ease,width .2s ease,height .2s ease,box-shadow .2s ease;overflow:hidden}
+.board-editing .whiteboard-content.content-collapsed:hover{box-shadow:0 7px 22px #1f293722;transform:translateY(-1px)}
+.board-editing .whiteboard-content.content-collapsed .whiteboard-content-head{height:31px;padding:3px 7px;background:#fff;border-bottom:1px solid #edf0f2}
+.board-editing .whiteboard-content.content-collapsed .whiteboard-content-head input{font-weight:650;border:0;background:transparent;padding:2px 4px;pointer-events:none}
+.board-editing .whiteboard-content.content-collapsed .content-drag-handle,.board-editing .whiteboard-content.content-collapsed .whiteboard-content-head>button{display:none}
+.board-editing .whiteboard-content.content-collapsed .whiteboard-content-body{padding:6px 8px;overflow:hidden;pointer-events:none;font-size:10px;line-height:1.25}
+.board-editing .whiteboard-content.content-collapsed .media-fields,.board-editing .whiteboard-content.content-collapsed .rich-toolbar,.board-editing .whiteboard-content.content-collapsed .controls,.board-editing .whiteboard-content.content-collapsed .hint{display:none!important}
+.board-editing .whiteboard-content.content-collapsed .whiteboard-content-body img.media{width:72px;height:50px;object-fit:cover;border-radius:6px}
+.board-editing .whiteboard-content.content-collapsed .whiteboard-content-body audio{width:210px;height:32px}
+.board-editing .whiteboard-content.content-collapsed textarea,.board-editing .whiteboard-content.content-collapsed .rich-editor{max-height:48px;min-height:0!important;overflow:hidden!important;border:0!important;padding:2px!important;background:transparent!important}
