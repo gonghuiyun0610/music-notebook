@@ -7,9 +7,9 @@ function archiveMigrate(x){
   if(!x.archiveInitialized)x.pages.forEach(p=>walk(p.blocks,b=>{if(b.type==="group"&&!b.needsPractice){const child=b.children.find(c=>c.needsPractice);if(child){b.needsPractice=true;b.practiceTags=[...(child.practiceTags||[])];b.proficiency=child.proficiency||"again";}}}));
   x.courses ||= []; x.relations ||= []; x.practiceLists ||= []; x.dailyPlans ||= [];
   x.practiceSessions ||= []; x.instruments ||= []; x.works ||= [];
-  x.archiveSettings ||= {title:"音乐档案",tagline:"听过，练过，留下过"};
+  x.archiveSettings ||= {title:"YUN的音乐档案",tagline:"听过，练过，留下过"};
   for(const p of x.pages){
-    if(p.kind==="practice")continue;
+    if(p.kind==="practice"||p.standalone)continue;
     let c=x.courses.find(c=>c.id===p.courseId);
     if(!c){c=x.courses.find(c=>c.title===(p.category||"未分类"));if(!c){c={id:uid(),title:p.category||"我的课程",chapters:[]};x.courses.push(c);}p.courseId=c.id;}
     let ch=c.chapters.find(ch=>ch.id===p.chapterId);
@@ -105,7 +105,7 @@ render=function(){
   if(!data)return;archiveMigrate(data);Archive.graphDispose?.();Archive.graphDispose=null;
   if(Archive.view==="knowledge"&&data.pages.length){practiceHome=false;archiveLegacyRender();document.body.classList.remove("archive-special");$("crumb").textContent=archivePath(page());$("meta").replaceChildren(el("span",{class:"muted",text:archivePath(page())}));archiveRenderTimer();return;}
   exitBoardOverview();document.body.classList.add("archive-special");document.body.classList.toggle("practice-page",Archive.view==="practice");nav();$("blocks").replaceChildren();$("title").replaceChildren();$("meta").replaceChildren();$("add").hidden=true;$("edit").hidden=true;$("deletePage").hidden=true;fitButton.hidden=true;practiceHome=Archive.view==="practice";
-  const titles={home:data.archiveSettings.title,directory:"课程知识",practice:"练习库",instrument:"乐器练习",works:"作品档案"};$("title").textContent=titles[Archive.view]||titles.home;$("crumb").textContent="主页 / "+(titles[Archive.view]||titles.home);
+  const titles={home:data.archiveSettings.title,directory:"知识百科",practice:"练习库",instrument:"乐器练习",works:"作品档案"};$("title").textContent=titles[Archive.view]||titles.home;$("crumb").textContent="主页 / "+(titles[Archive.view]||titles.home);
   if(Archive.view==="home")archiveRenderHome();else if(Archive.view==="directory")archiveRenderDirectory();else if(Archive.view==="practice")archiveRenderPractice();else if(Archive.view==="instrument")archiveRenderInstruments();else if(Archive.view==="works")archiveRenderWorks();archiveRenderTimer();
 };
 function archiveRenderHome(){
