@@ -107,3 +107,16 @@ body:has(.yun-inbox.edit-mode.open) .yun-inbox-tab.expanded{right:min(calc(var(-
 .yun-inbox.open{transform:translateX(0);visibility:visible;pointer-events:auto}
 .yun-inbox .yun-pin-btn{display:none}
 @media(max-width:700px){.yun-inbox{left:7px!important;right:auto;top:66px!important;width:calc(100vw - 14px)!important}.yun-inbox-tab,.yun-inbox-tab.expanded,body:has(.yun-inbox.edit-mode.open) .yun-inbox-tab.expanded{left:0;right:auto;top:auto;bottom:90px;writing-mode:vertical-rl}}
+
+/* V26: closed inbox leaves blank space; opened inbox docks below the nodes. */
+.yun-inbox.docked{position:relative;left:auto!important;right:auto;top:auto!important;bottom:auto;width:100%!important;height:min(55dvh,520px);max-width:100%;margin-top:6px;transform:none;display:none;visibility:hidden;transition:none;box-shadow:0 5px 20px #6559510d;border:0;border-radius:12px}
+.yun-inbox.docked.open{display:flex;visibility:visible;pointer-events:auto}
+.yun-inbox:not(.docked){bottom:auto;height:min(70dvh,600px);max-width:calc(100vw - 16px);transition:opacity .15s ease;transform:none}
+.yun-inbox.open .yun-pin-btn{display:inline-flex}.yun-inbox-head{cursor:grab;touch-action:none}.yun-inbox.pinned .yun-inbox-head{cursor:default}.yun-inbox.panel-dragging .yun-inbox-head{cursor:grabbing}
+.yun-inbox-drag-grip{flex:none;color:#a49a8f;font-size:18px;padding-right:2px}.yun-inbox-head{flex-wrap:wrap;gap:3px;padding:9px}
+.yun-inbox-head-actions{margin-left:auto;flex-wrap:wrap;justify-content:flex-end}.yun-inbox-head strong{font-size:14px}
+.yun-inbox.docked .yun-collect-btn{font-size:9px}.yun-inbox.docked .yun-inbox-head-actions{gap:0}
+.yun-inbox.docked .yun-filter-row{flex-wrap:wrap}.yun-inbox.docked .yun-filter-chip{padding:5px 6px;font-size:10px}.yun-inbox.docked .yun-inbox-item{padding:7px;gap:6px}
+.yun-inbox.docked .yun-inbox-name{font-size:11px}.yun-inbox.docked .yun-inbox-tip{font-size:9px}
+.yun-inbox .yun-inbox-list{scrollbar-width:none}.yun-inbox .yun-inbox-list::-webkit-scrollbar{display:none}
+@media(max-width:700px){.yun-inbox:not(.docked){left:var(--yun-panel-left,7px)!important;top:var(--yun-panel-top,66px)!important;width:min(320px,calc(100vw - 14px))!important}.yun-inbox.docked{width:100%!important}.yun-inbox.open .yun-inbox-list{padding-bottom:4px}}

@@ -312,7 +312,12 @@ function boardLocalTools(board, list) {
   panel.append(button("标题", () => {menu.open=false;boardAddHeading(board);}));
   BOARD_TYPES.forEach(([type,name]) => panel.append(button(name, () => {menu.open=false;boardAddPart(board,type);})));
   menu.append(panel);
-  tools.append(button("灵感箱",e=>window.YunInbox?.toggle?.(e.currentTarget),"board-inbox-button"),menu,button("⋯",()=>boardMenu(board,list),"board-options-button"));
+  const practice=button("",()=>markPractice(board),"board-practice-link");
+  practice.innerHTML='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7 .1l3-3a5 5 0 0 0-7-7l-2 2M14 11a5 5 0 0 0-7-.1l-3 3a5 5 0 0 0 7 7l2-2"/></svg>';
+  practice.title=board.needsPractice?"已加入练习库，点击管理":"加入练习库";practice.setAttribute("aria-label",practice.title);practice.setAttribute("aria-pressed",String(!!board.needsPractice));
+  const inbox=button("灵感箱",e=>window.YunInbox?.toggle?.(e.currentTarget),"board-inbox-button");inbox.setAttribute("aria-expanded","false");
+  const remove=button("×",()=>archiveDelete("point",board.id,{stayColumn:true}),"board-delete-button");remove.title="删除当前知识块";remove.setAttribute("aria-label",remove.title);
+  tools.append(menu,practice,inbox,remove);
   return tools;
 }
 
@@ -419,7 +424,7 @@ function boardContent(b, list, owner) {
     if(editing && b.collapsed){
       // V6：收纳模块进入独立“模块栏”。原始 layout 完全不改，展开时恢复最后位置/大小。
       // 这里只负责生成完整鸟瞰缩略图；位置与占位尺寸由模块栏 wrapper 管理。
-      const maxW=96, maxH=60;
+      const maxW=64, maxH=40;
       const scale=Math.min(1,maxW/Math.max(1,layout.width),maxH/Math.max(1,layout.height));
       section.style.left="0px";
       section.style.top="0px";
@@ -657,7 +662,7 @@ function renderBoard(b, list) {
   }
   titleRow.append(title,boardPracticeActions(b));section.append(titleRow);
   const localTools=boardLocalTools(b,list);
-  if(!editing){localTools.querySelector(".board-add-menu")?.remove();localTools.querySelector(".board-options-button")?.remove();}
+  if(!editing)localTools.querySelector(".board-add-menu")?.remove();
   section.append(localTools);
   // 顶部仅保留名称；旧版折叠白板自动展示，避免出现没有展开入口的空白。
   section.append(boardTags(b));
@@ -722,7 +727,7 @@ function renderBoard(b, list) {
     const node=boardContent(child,b.children,b);
     if(editing && child.collapsed){
       const l=child.layout||BOARD_DEFAULTS[child.type]||{width:320,height:180};
-      const scale=Math.min(1,96/Math.max(1,l.width),60/Math.max(1,l.height));
+      const scale=Math.min(1,64/Math.max(1,l.width),40/Math.max(1,l.height));
       const frame=el("div",{class:"board-module-thumb-frame",title:"点击恢复到上次编辑的位置和大小"});
       frame.style.width=Math.max(48,l.width*scale)+"px";
       frame.style.height=Math.max(30,l.height*scale)+"px";

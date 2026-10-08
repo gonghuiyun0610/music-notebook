@@ -69,7 +69,7 @@
     box.id = "yun-inbox-panel";
     box.innerHTML = `
       <div class="yun-inbox-head">
-        <strong>灵感箱</strong>
+        <span class="yun-inbox-drag-grip" aria-hidden="true">⠿</span><strong>灵感箱</strong>
         <div class="yun-inbox-head-actions">
           <button class="yun-head-btn yun-collect-btn" type="button">去收集灵感</button>
           <button class="yun-head-btn yun-mode-btn" type="button"></button>
@@ -102,7 +102,14 @@
       <div class="yun-inbox-tip">可预览播放；拖到已有模块可直接填入，拖到白板空白处会新建模块</div>
     `;
     document.body.append(tab, box);
-
+    let floating=false,panelDrag=null;
+    const placePanel=(left,top)=>{box.style.left=left+"px";box.style.top=top+"px";box.style.setProperty("--yun-panel-left",left+"px");box.style.setProperty("--yun-panel-top",top+"px");};
+    const resetDock=()=>{
+      if(floating)return;
+      const slot=window.YunWorkspace?.inboxSlot;
+      if(slot){slot.append(box);box.classList.add("docked");box.style.left="";box.style.top="";box.style.width="";}
+      else{if(box.classList.contains("docked"))setOpen(false);document.body.append(box);box.classList.remove("docked");}
+    };
     const setOpen = open => {
       clearTimeout(collapseTimer);
       box.classList.toggle("open", open);
@@ -110,11 +117,17 @@
       tab.setAttribute("aria-expanded", String(open));
       box.setAttribute("aria-hidden", String(!open));
       box.inert = !open;
+      document.querySelectorAll(".board-inbox-button").forEach(b=>b.setAttribute("aria-expanded",String(open)));
     };
+    const closePanel=()=>{setOpen(false);floating=false;panelDrag=null;box.classList.remove("panel-dragging");resetDock();};
+    window.YunInbox.resetDock=resetDock;window.YunInbox.close=closePanel;
     window.YunInbox.toggle = anchor => {
-      const rect=anchor?.getBoundingClientRect?.();
-      if(rect){box.style.left=Math.max(8,Math.min(rect.right+8,window.innerWidth-(state.mode==="edit"?390:320)-12))+"px";box.style.top=Math.max(12,Math.min(rect.top,window.innerHeight-320))+"px";}
-      setOpen(!box.classList.contains("open"));
+      if(box.classList.contains("open")){closePanel();return;}
+      floating=false;resetDock();
+      if(!box.classList.contains("docked")){const rect=anchor?.getBoundingClientRect?.();
+        if(rect)placePanel(Math.max(8,Math.min(rect.left,window.innerWidth-(state.mode==="edit"?390:320)-12)),Math.max(12,Math.min(rect.bottom+8,window.innerHeight-320)));
+      }
+      setOpen(true);
     };
     const autoCollapse = () => {};
     tab.onclick = () => window.YunInbox.toggle(tab);
@@ -124,12 +137,26 @@
     const applyPin = () => {
       pin.classList.toggle("pinned", pinned);
       pin.setAttribute("aria-pressed", String(pinned));
-      pin.title = pinned ? "已固定，点击取消固定" : "点击入口展开或收起";
+      pin.title = pinned ? "已固定，点击取消固定" : "拖动标题栏可移动，点击钉子固定";
       pin.setAttribute("aria-label", pin.title);
+      box.classList.toggle("pinned",pinned);
     };
-    pin.onclick = () => { pinned = !pinned; localStorage.setItem("yunInboxPinned", String(pinned)); applyPin(); };
+    pin.onclick = () => { pinned = !pinned;panelDrag=null;box.classList.remove("panel-dragging"); localStorage.setItem("yunInboxPinned", String(pinned)); applyPin(); };
     applyPin(); setOpen(false);
-    box.querySelector(".yun-inbox-close").onclick = () => setOpen(false);
+    resetDock();
+    box.querySelector(".yun-inbox-close").onclick = closePanel;
+    const head=box.querySelector(".yun-inbox-head");
+    head.onpointerdown=e=>{
+      if(pinned||e.button!==0||e.target.closest?.("button,input,a"))return;
+      e.preventDefault();const rect=box.getBoundingClientRect();floating=true;document.body.append(box);box.classList.remove("docked");
+      box.style.width=Math.min(rect.width,window.innerWidth-16)+"px";placePanel(rect.left,rect.top);
+      panelDrag={id:e.pointerId,x:e.clientX,y:e.clientY,left:rect.left,top:rect.top};head.setPointerCapture?.(e.pointerId);box.classList.add("panel-dragging");
+    };
+    head.onpointermove=e=>{if(!panelDrag||pinned)return;e.preventDefault();
+      placePanel(Math.max(0,Math.min(window.innerWidth-box.getBoundingClientRect().width,panelDrag.left+e.clientX-panelDrag.x)),Math.max(0,Math.min(window.innerHeight-44,panelDrag.top+e.clientY-panelDrag.y)));
+    };
+    const finishPanel=e=>{head.releasePointerCapture?.(e.pointerId);panelDrag=null;box.classList.remove("panel-dragging");};
+    head.onpointerup=finishPanel;head.onpointercancel=finishPanel;head.onlostpointercapture=()=>{panelDrag=null;box.classList.remove("panel-dragging");};
     box.querySelector(".yun-collect-btn").onclick = () => { window.open(COLLECT_URL, "_blank", "noopener"); };
     box.querySelector(".yun-mode-btn").onclick = () => {
       state.mode = state.mode === "browse" ? "edit" : "browse";

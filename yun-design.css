@@ -71,3 +71,40 @@
 .yun-add-knowledge{background:#e9efe6;border:0;border-radius:9px;color:#65745c;font-size:13px;margin-top:20px}
 body:has(.board-inbox-button) .yun-inbox-tab{display:none}
 @media(max-width:640px){.block.knowledge-board,.yun-content-edit .block.knowledge-board,.yun-knowledge-top .block.knowledge-board,.yun-column-blocks .block.knowledge-board{padding:14px 10px 14px 52px}.block.knowledge-board.board-reading{padding-left:52px!important}.knowledge-board-title .board-name{font-size:14px;padding:8px 12px}.knowledge-board .board-local-tools{width:48px}.board-editing .board-module-dock{gap:6px;padding:5px}.board-module-dock-head strong{font-size:11px}.knowledge-board-title .board-practice-actions button{font-size:11px}}
+
+/* V26: independent node lane and one unified active bookmark. */
+.yun-workspace.with-nodes{display:grid;grid-template-columns:clamp(210px,21vw,260px) minmax(0,1fr);align-items:start;gap:20px;padding-top:42px}
+.yun-workspace #blocks{min-width:0;margin-top:0}
+.yun-workspace-rail{position:sticky;top:90px;min-width:0;max-height:calc(100dvh - 105px);overflow:auto;scrollbar-width:none;padding:0 1px 12px}
+.yun-workspace-rail[hidden]{display:none}.yun-workspace-rail::-webkit-scrollbar{display:none}
+.yun-column-nodes{padding:0 10px 16px;border:0;background:transparent}
+.yun-column-nodes h3{font-size:14px;font-weight:600;margin:0 0 20px;color:#5f594f}
+.yun-column-node-list{position:relative;display:flex;flex-direction:column;gap:22px}
+.yun-column-node-list:before{content:"";position:absolute;top:20px;bottom:20px;left:50%;width:1px;background:#dad7d1}
+.yun-column-node{position:relative;display:flex;align-items:center;gap:6px;min-height:44px;padding:6px 10px 6px 4px;background:#e8f0e9;border-radius:18px;border:0;color:#5e6a61;cursor:default;outline-offset:3px}
+.yun-column-node.active{background:#e7dff4;color:#645779}
+.yun-column-node.dragging{opacity:.55}.yun-column-node.drop-before{box-shadow:0 -3px #b7a4ca}.yun-column-node.drop-after{box-shadow:0 3px #b7a4ca}
+.yun-node-label{min-width:0;flex:1;overflow-wrap:anywhere;font-size:12px}.yun-node-state{flex:none;font-size:10px;background:#ffffff70;border-radius:9px;padding:2px 5px;white-space:nowrap}.yun-node-state:empty{display:none}
+.yun-node-grip{border:0;background:transparent;color:#a393b5;font-size:17px;padding:4px;cursor:grab;touch-action:none}.yun-node-grip:active{cursor:grabbing}
+.yun-node-hint{font-size:10px;color:#aba298;text-align:center;margin:15px 0 0}
+.yun-workspace .block.knowledge-board,.yun-workspace .block.knowledge-board.board-reading{padding:0!important;margin:0 0 66px;border-radius:0 9px 9px 9px;scroll-margin-top:110px}
+.yun-workspace .knowledge-board .knowledge-board-title{position:absolute;left:0;bottom:100%;width:fit-content;max-width:100%;min-height:36px;margin:0;padding:3px 7px;gap:4px;flex-wrap:nowrap;border-radius:8px 8px 0 0;background:#e5ddf0;z-index:70}
+.yun-workspace .knowledge-board:nth-of-type(2n) .knowledge-board-title{background:#dce9e1}
+.yun-workspace .knowledge-board-title .board-name{background:transparent;color:#60566e;padding:5px 7px;margin:0;width:auto;min-width:32px;max-width:100%;font-size:15px;line-height:1.5}
+.yun-workspace .board-local-tools{position:static;left:auto;top:auto!important;display:flex;flex-direction:row;align-items:center;width:auto;flex:none;background:transparent;border:0;padding:0;gap:2px;transition:none;box-shadow:none}
+.yun-workspace .board-local-tools button,.yun-workspace .board-add-menu>summary{display:flex;align-items:center;justify-content:center;background:transparent;border:0;box-shadow:none;color:#685c76;border-radius:4px;min-width:26px;width:26px;height:28px;padding:3px;margin:0}
+.yun-workspace .board-add-menu>summary{font-size:22px}.yun-workspace .board-local-tools .board-inbox-button{width:auto;min-width:50px;font-size:11px;padding:3px 5px;white-space:nowrap}
+.yun-workspace .board-local-tools svg{width:19px;height:19px}.yun-workspace .board-delete-button{font-size:22px}.yun-workspace .board-practice-link[aria-pressed="true"]{color:#557e67}
+.yun-workspace .board-local-tools button:hover,.yun-workspace .board-add-menu>summary:hover{background:#ffffff55}
+.yun-workspace .board-add-options{left:0;top:34px;z-index:1500}
+.yun-workspace .board-add-options button{display:block;text-align:left;width:100%;height:auto}
+.yun-workspace .board-editing .board-module-dock,.yun-workspace .board-editing .board-module-dock.dock-folded{position:absolute;left:0;top:0;right:0;width:100%;box-sizing:border-box;min-height:0;max-height:56px;margin:0;padding:5px 10px;gap:8px;z-index:50;border:0;border-radius:0 8px 0 0;background:rgba(237,228,218,.28);box-shadow:none;pointer-events:none}
+.yun-workspace .board-module-dock-head,.yun-workspace .board-module-dock-list{pointer-events:auto}
+.yun-workspace .board-editing .board-module-dock-list{max-height:42px}
+.yun-workspace .board-module-dock-head strong{font-size:11px}.yun-workspace .board-module-dock-toggle{background:transparent;font-size:15px}
+.yun-workspace .board-editing .board-module-thumb-frame{max-width:64px;max-height:40px}
+.yun-workspace .board-editing .knowledge-board-scroll{height:clamp(260px,44dvh,510px);border:0;border-radius:0 8px 8px 8px;min-height:260px}
+.yun-workspace .knowledge-headings:empty,.yun-workspace .knowledge-tags:empty{display:none}
+.yun-workspace .yun-active-board .knowledge-board-title{box-shadow:0 -2px 10px #7467810a}
+@media(max-width:1000px){.yun-workspace.with-nodes{grid-template-columns:200px minmax(0,1fr);gap:12px}.yun-workspace .knowledge-board-title .board-name{font-size:13px;padding-left:3px;padding-right:3px}.yun-workspace .board-local-tools{gap:0}}
+@media(max-width:760px){.yun-workspace.with-nodes{grid-template-columns:1fr;padding-top:20px;gap:40px}.yun-workspace-rail{position:relative;top:0;max-height:none}.yun-column-nodes{padding:0 0 12px}.yun-column-node-list{gap:12px}.yun-workspace .knowledge-board-title .board-name{font-size:13px}.yun-workspace .board-editing .knowledge-board-scroll{height:48dvh}.yun-workspace .board-local-tools .board-inbox-button{min-width:42px;font-size:10px}}

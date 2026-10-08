@@ -312,10 +312,10 @@ const yunPractice=archiveRenderPractice;archiveRenderPractice=function(){yunPrac
     Archive.selection={kind:source.kind,id:source.id};expand(targetKey);changed();render();return true;
   }
   const previousDelete=archiveDelete;
-  archiveDelete=function(kind,id){
+  archiveDelete=function(kind,id,options={}){
     if(protectedIds.has(id)||protectedIds.has(`${kind}:${id}`))return;
     if(!["course","chapter","lesson","standalone","folder","point"].includes(kind))return previousDelete(kind,id);
-    const nodes=model(),n=nodes.find(n=>n.key===`${kind}:${id}`);if(!n)return;
+    const nodes=model(),n=nodes.find(n=>n.key===`${kind}:${id}`);if(!n)return;const wasEditing=editing;
     archiveConfirm("删除「"+n.title+"」？",n.kind==="point"?"知识块及其中的内容将删除，可使用撤销恢复。":"栏目及子栏目将删除，其中的知识块会保留并移入未归类。",()=>{
       const keys=descendants(n.key),removedIds=new Set([...keys].map(idOf));stop();
       if(n.kind!=="point"){
@@ -338,7 +338,13 @@ const yunPractice=archiveRenderPractice;archiveRenderPractice=function(){yunPrac
       });
       const prune=list=>list.filter(b=>!keys.has(`point:${b.id}`)).map(b=>{if(b.children)b.children=prune(b.children);return b;});data.pages.forEach(p=>p.blocks=prune(p.blocks));
       data.relations=data.relations.filter(r=>!removedIds.has(r.from)&&!removedIds.has(r.to));data.practiceLists.forEach(l=>l.items=l.items.filter(id=>!removedIds.has(id)));
-      Archive.selection=null;Archive.view="directory";current=data.pages.find(p=>p.id===current)?.id||data.pages[0]?.id||null;changed();render();
+      Archive.selection=null;Archive.view="directory";current=data.pages.find(p=>p.id===current)?.id||data.pages[0]?.id||null;
+      if(n.kind==="point"&&options.stayColumn){
+        const remaining=model().filter(x=>x.kind==="point"&&x.parent===n.parent).sort((a,b)=>(a.object.sidebarOrder??1e6)-(b.object.sidebarOrder??1e6));
+        if(remaining.length){const next=remaining[0];current=next.p.id;Archive.selection={kind:"point",id:next.id};Archive.view="knowledge";editing=wasEditing;}
+        else{Archive.selection=n.parent===ROOT?null:{kind:kindOf(n.parent),id:idOf(n.parent)};editing=false;}
+      }
+      changed();render();
     });
   };
   function closeContext(){contextMenu?.remove();contextMenu=null;}
