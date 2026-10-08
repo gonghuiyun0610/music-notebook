@@ -76,3 +76,27 @@
 .yun-inbox .yun-inbox-tip{background:#f2e6d8;color:#8c7c71;border-top-color:#eee1d2}
 .yun-inbox .yun-check input{accent-color:#b29381}.yun-inbox .yun-star.active{color:#a37c42}
 .yun-preview-modal{background:#fff9f0;color:#655951}.yun-preview-file .yun-asset-icon{width:38px;height:38px;justify-self:center;color:#8c7565}
+
+/* V20: 30 percentage points more transparent; text stays fully opaque. */
+.yun-inbox.browse-mode,.yun-inbox.edit-mode{background:rgba(255,249,240,.66)}
+.yun-inbox{backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px)}
+.yun-inbox-tab.expanded{right:min(calc(var(--yun-inbox-browse-w) + 14px),calc(100vw - 10px))}
+body:has(.yun-inbox.edit-mode.open) .yun-inbox-tab.expanded{right:min(calc(var(--yun-inbox-edit-w) + 14px),calc(100vw - 10px))}
+.yun-inbox .yun-head-btn svg{width:18px;height:18px;display:block}
+.yun-inbox .yun-mode-btn,.yun-inbox .yun-pin-btn{display:grid;place-items:center;padding:5px;width:28px;height:28px;flex-shrink:0}
+.yun-inbox .yun-pin-btn svg{transform:rotate(35deg);transition:transform .18s ease}
+.yun-inbox .yun-pin-btn.pinned{background:#edcbb5;border-radius:7px}
+.yun-inbox .yun-pin-btn.pinned svg{transform:rotate(0)}
+.yun-inbox .yun-inbox-item,.yun-inbox .yun-inbox-name,.yun-inbox .yun-inline-name{cursor:default}
+.yun-inbox .yun-inbox-item:active{cursor:default}
+.yun-inbox.edit-mode .yun-inbox-item.selected{background:#d9c5ad}
+.yun-inbox .yun-inbox-item.dragging,.yun-inbox .yun-inbox-item.dragging *{cursor:grabbing!important}
+.yun-inbox .yun-batch-row{flex-wrap:wrap;gap:8px}
+.yun-inbox .yun-batch-delete{display:flex;align-items:center;gap:5px;padding:5px 0;white-space:nowrap}
+.yun-inbox .yun-selected-count{margin-right:0;margin-left:auto}
+.yun-inbox .yun-regex-pop{left:0;right:auto;background:#fff9f0;color:var(--yun-ink);width:min(250px,70vw)}
+.yun-inbox .yun-regex-pop[hidden]{display:none}
+.yun-inbox .yun-regex-pop strong{display:block;font-size:12px;margin-bottom:8px}
+.yun-inbox .yun-regex-option{background:#f4e9dc;color:var(--yun-ink)}
+.yun-inbox .yun-regex-option[aria-pressed="true"]{background:#e4eddf}
+@media(max-width:700px){.yun-inbox-tab.expanded,body:has(.yun-inbox.edit-mode.open) .yun-inbox-tab.expanded{right:7px;top:auto;bottom:8px;writing-mode:horizontal-tb;letter-spacing:0;padding:7px 12px;z-index:1202}.yun-inbox.open .yun-inbox-list{padding-bottom:44px}.yun-inbox-head{padding-left:10px;gap:3px}.yun-inbox-head strong{font-size:15px}.yun-inbox-head-actions{gap:2px}.yun-collect-btn{padding:5px;font-size:10px}}

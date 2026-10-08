@@ -12,6 +12,13 @@
     regexSelected: [],
     query: ""
   };
+  let pinned = localStorage.getItem("yunInboxPinned") === "true", dragging = false, collapseTimer;
+  const draftKey = "yunInboxPendingNamesV20";
+  let drafts = {};
+  try { drafts = JSON.parse(localStorage.getItem(draftKey) || "{}"); } catch (_) {}
+  const persistDrafts = () => localStorage.setItem(draftKey, JSON.stringify(drafts));
+  const controlIcon = path => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${path}</svg>`;
+  const pinIcon = controlIcon('<path d="m9 3 6 0-1 6 4 4v2H6v-2l4-4ZM12 15v7"/>');
 
   const esc = s => String(s ?? "").replace(/[&<>\"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
   const typeName = t => t === "音频" ? "录音" : t === "文字" ? "记录" : t;
@@ -53,22 +60,24 @@
   function shell() {
     const tab = document.createElement("button");
     tab.className = "yun-inbox-tab";
-    tab.textContent = "‹ 收集箱";
-    tab.title = "打开收集箱";
+    tab.textContent = "灵感箱";
+    tab.title = "展开或收起灵感箱";
+    tab.setAttribute("aria-controls", "yun-inbox-panel");
 
     const box = document.createElement("section");
     box.className = "yun-inbox";
+    box.id = "yun-inbox-panel";
     box.innerHTML = `
       <div class="yun-inbox-head">
-        <strong>收集箱</strong>
+        <strong>灵感箱</strong>
         <div class="yun-inbox-head-actions">
-          <button class="yun-head-btn yun-refresh-btn" type="button" title="刷新收集箱（仅加入新文件）" aria-label="刷新">↻</button>
-          <button class="yun-head-btn yun-collect-btn" type="button">收集</button>
+          <button class="yun-head-btn yun-collect-btn" type="button">去收集灵感</button>
           <button class="yun-head-btn yun-mode-btn" type="button"></button>
+          <button class="yun-head-btn yun-pin-btn" type="button">${pinIcon}</button>
           <button class="yun-inbox-close" type="button" aria-label="收起">×</button>
         </div>
       </div>
-      <div class="yun-inbox-search"><input placeholder="搜索最近收集的内容…"></div>
+      <div class="yun-inbox-search"><input placeholder="搜索名称或上传标签…"></div>
       <div class="yun-edit-tools">
         <div class="yun-filter-row">
           <button class="yun-filter-chip active" data-type-filter="全部">全部</button>
@@ -78,11 +87,15 @@
           <button class="yun-filter-chip" data-type-filter="视频">视频</button>
           <button class="yun-filter-chip" data-type-filter="文件">文件</button>
           <button class="yun-filter-chip" data-type-filter="记录">记录</button>
+          <button class="yun-head-btn yun-refresh-btn" type="button" title="同步本地修改与云端文件" aria-label="同步本地修改与云端文件">↻</button>
         </div>
         <div class="yun-batch-row">
+          <div class="yun-regex-wrap">
+            <button class="yun-head-btn yun-regex-toggle" aria-expanded="false">正则 ▾</button>
+            <div class="yun-regex-pop" hidden><strong>按上传标签筛选</strong><input class="yun-regex-search" placeholder="搜索上传标签"><div class="yun-regex-results"></div></div>
+          </div>
+          <button class="yun-head-btn yun-batch-delete" title="批量删除">${controlIcon('<path d="M3 6h18M9 6V3h6v3M5 6l1 15h12l1-15M10 10v7M14 10v7"/>')}<span>批量删除</span></button>
           <span class="yun-selected-count">已选择 0 项</span>
-          <button class="yun-icon-btn yun-batch-sync" title="批量同步" aria-label="批量同步">↻</button>
-          <button class="yun-icon-btn yun-batch-delete" title="批量删除" aria-label="批量删除">×</button>
         </div>
       </div>
       <div class="yun-inbox-list"></div>
@@ -90,8 +103,31 @@
     `;
     document.body.append(tab, box);
 
-    tab.onclick = () => { box.classList.add("open"); tab.hidden = true; };
-    box.querySelector(".yun-inbox-close").onclick = () => { box.classList.remove("open"); tab.hidden = false; };
+    const setOpen = open => {
+      clearTimeout(collapseTimer);
+      box.classList.toggle("open", open);
+      tab.classList.toggle("expanded", open);
+      tab.setAttribute("aria-expanded", String(open));
+      box.setAttribute("aria-hidden", String(!open));
+      box.inert = !open;
+    };
+    const autoCollapse = () => {
+      clearTimeout(collapseTimer);
+      if (!pinned && !dragging) collapseTimer = setTimeout(() => setOpen(false), 250);
+    };
+    tab.onclick = () => setOpen(!box.classList.contains("open"));
+    box.onmouseenter = tab.onmouseenter = () => clearTimeout(collapseTimer);
+    box.onmouseleave = tab.onmouseleave = autoCollapse;
+    const pin = box.querySelector(".yun-pin-btn");
+    const applyPin = () => {
+      pin.classList.toggle("pinned", pinned);
+      pin.setAttribute("aria-pressed", String(pinned));
+      pin.title = pinned ? "已固定，点击取消固定" : "未固定，鼠标离开自动收纳";
+      pin.setAttribute("aria-label", pin.title);
+    };
+    pin.onclick = () => { pinned = !pinned; localStorage.setItem("yunInboxPinned", String(pinned)); applyPin(); };
+    applyPin(); setOpen(false);
+    box.querySelector(".yun-inbox-close").onclick = () => setOpen(false);
     box.querySelector(".yun-collect-btn").onclick = () => { window.open(COLLECT_URL, "_blank", "noopener"); };
     box.querySelector(".yun-mode-btn").onclick = () => {
       state.mode = state.mode === "browse" ? "edit" : "browse";
@@ -108,8 +144,11 @@
       render();
     });
 
-    box.querySelector(".yun-batch-sync").onclick = batchSync;
     box.querySelector(".yun-batch-delete").onclick = batchDelete;
+    const pop = box.querySelector(".yun-regex-pop"), toggle = box.querySelector(".yun-regex-toggle");
+    toggle.onclick = () => { pop.hidden = !pop.hidden; toggle.setAttribute("aria-expanded", String(!pop.hidden)); renderLabels(); };
+    box.querySelector(".yun-regex-search").oninput = renderLabels;
+    document.addEventListener("click", e => { if (!e.target.closest(".yun-regex-wrap")) { pop.hidden = true; toggle.setAttribute("aria-expanded", "false"); } });
 
     box.querySelector(".yun-refresh-btn").onclick = refresh;
     applyMode();
@@ -121,9 +160,39 @@
     if (!box) return;
     box.classList.toggle("browse-mode", state.mode === "browse");
     box.classList.toggle("edit-mode", state.mode === "edit");
-    box.querySelector(".yun-mode-btn").textContent = state.mode === "browse" ? "编辑模式" : "浏览模式";
+    const modeBtn = box.querySelector(".yun-mode-btn");
+    modeBtn.innerHTML = state.mode === "browse" ? icon("记录") : controlIcon('<path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/>');
+    modeBtn.title = state.mode === "browse" ? "切换到编辑模式" : "切换到浏览模式";
+    modeBtn.setAttribute("aria-label", modeBtn.title);
     box.querySelector(".yun-edit-tools").hidden = false;
     box.querySelector(".yun-batch-row").hidden = state.mode !== "edit";
+    box.querySelector(".yun-regex-pop").hidden = true;
+  }
+
+  const labelsOf = x => String(x.regex || x.uploadLabel || "").split(/[,，]/).map(s => s.trim()).filter(Boolean);
+  function renderLabels() {
+    const box = document.querySelector(".yun-inbox"), results = box.querySelector(".yun-regex-results");
+    const q = box.querySelector(".yun-regex-search").value.toLowerCase();
+    results.replaceChildren();
+    [...new Set(state.items.flatMap(labelsOf))].sort().filter(s => s.toLowerCase().includes(q)).forEach(label => {
+      const b = document.createElement("button"); b.className = "yun-regex-option";
+      const selected = state.regexSelected.includes(label);
+      b.textContent = (selected ? "☑ " : "☐ ") + label;
+      b.setAttribute("aria-pressed", String(selected));
+      b.onclick = () => { state.regexSelected = selected ? state.regexSelected.filter(s => s !== label) : [...state.regexSelected, label]; render(); };
+      results.append(b);
+    });
+    if (!results.children.length) results.textContent = "暂无符合条件的上传标签";
+  }
+  function mergeCloud(incoming) {
+    const map = new Map(state.items.map(x => [String(x.id), x]));
+    const merged = incoming.map(remote => {
+      const id = String(remote.id), old = map.get(id); map.delete(id);
+      const draft = drafts[id];
+      return draft ? {...old, ...remote, displayName:draft.name, dirty:true} : {...old, ...remote};
+    });
+    // recent-json is a latest-files window, not a complete deletion inventory.
+    state.items = [...merged, ...map.values()];
   }
 
   async function load() {
@@ -133,7 +202,7 @@
       const r = await apiFetch("/api/recent-json");
       if (!r.ok) throw Error("HTTP " + r.status);
       const data = await r.json();
-      state.items = Array.isArray(data.items) ? data.items : [];
+      mergeCloud(Array.isArray(data.items) ? data.items : []);
       render();
     } catch (e) {
       list.innerHTML = `<div class="yun-inbox-empty"><b>收集箱连接失败</b><br>请刷新页面重试。<br><small>${esc(e.message)}</small></div>`;
@@ -144,24 +213,30 @@
     const btn = document.querySelector(".yun-refresh-btn");
     if (btn.disabled) return;
     btn.disabled = true; btn.classList.add("working");
+    const failures = [], pushed = new Map();
     try {
+      for (const x of state.items.filter(x => x.dirty)) {
+        try { await syncItem(x, null, true); pushed.set(String(x.id), {...x}); }
+        catch (e) { failures.push(e.message); }
+      }
       const r = await apiFetch("/api/recent-json");
       if (!r.ok) throw Error("HTTP " + r.status);
       const data = await r.json();
       const incoming = Array.isArray(data.items) ? data.items : [];
-      const ids = new Set(state.items.map(x => String(x.id)));
-      const newer = incoming.filter(x => !ids.has(String(x.id)));
-      state.items = [...newer, ...state.items];
+      mergeCloud(incoming);
+      // Preserve successful writes for this pull in case metadata reads lag.
+      state.items = state.items.map(x => pushed.has(String(x.id)) && !drafts[String(x.id)] ? {...x, ...pushed.get(String(x.id)), media:x.media, preview:x.preview} : x);
       render();
-      btn.title = newer.length ? `新增 ${newer.length} 项` : "没有新文件";
-    } catch(e) { alert("刷新失败：" + e.message); }
+      btn.title = failures.length ? "部分修改未同步，点击重试" : "同步完成";
+      if (failures.length) alert(`${failures.length} 项修改同步失败，已保留本地修改，请重试。`);
+    } catch(e) { alert("同步失败：" + e.message); }
     finally { btn.disabled=false; btn.classList.remove("working"); }
   }
 
   function filteredItems() {
     return state.items.filter(x => {
       const editTypeOK = state.typeFilter === "全部" || (state.typeFilter === "收藏" && x.favorite) || typeName(x.type) === state.typeFilter;
-      const regexOK = !state.regexSelected.length || String(x.regex || "").split(/[,，]/).some(label => state.regexSelected.includes(label.trim()));
+      const regexOK = state.mode !== "edit" || !state.regexSelected.length || labelsOf(x).some(label => state.regexSelected.includes(label));
       const q = state.query;
       const text = `${x.displayName || x.name || ""} ${x.name || ""} ${x.regex || ""} ${x.note || ""}`.toLowerCase();
       return editTypeOK && regexOK && (!q || text.includes(q));
@@ -175,7 +250,9 @@
       e.dataTransfer.effectAllowed = "copy";
       e.dataTransfer.setData("application/x-yun-inbox", JSON.stringify(x));
       e.dataTransfer.setData("text/plain", x.displayName || x.name || "");
+      dragging = true; clearTimeout(collapseTimer); row.classList.add("dragging");
     };
+    row.ondragend = () => { dragging = false; row.classList.remove("dragging"); if (!pinned && !row.closest(".yun-inbox").matches(":hover")) document.querySelector(".yun-inbox").onmouseleave(); };
   }
 
   function openPreview(x) {
@@ -203,7 +280,6 @@
     const edit=e=>{
       e.preventDefault();e.stopPropagation();
       if(row.querySelector(".yun-inline-name"))return;
-      const oldName=x.displayName,oldDirty=x.dirty;
       const input=document.createElement("input");input.className="yun-inline-name";
       input.value=x.displayName||x.name||"";input.setAttribute("aria-label","修改显示名称");
       title.replaceWith(input);row.draggable=false;input.focus();input.select();
@@ -213,9 +289,8 @@
         if(finished)return;finished=true;
         const v=input.value.trim();
         if(v && v!==(x.displayName||x.name)){
-          input.disabled=true;x.displayName=v;x.dirty=true;
-          try{await saveMeta(x,{displayName:v});}
-          catch(error){x.displayName=oldName;x.dirty=oldDirty;alert("显示名称保存失败："+error.message);}
+          x.displayName=v;x.dirty=true;
+          drafts[String(x.id)]={name:v};persistDrafts();
         }
         render();
       };
@@ -238,11 +313,12 @@
     return r.json();
   }
 
-  async function syncItem(x, btn) {
+  async function syncItem(x, btn, quiet=false) {
     const current = x.displayName || x.name || "";
     if (!current) return;
     btn?.classList.add("working");
     try {
+      await saveMeta(x, {displayName:current});
       const r = await apiFetch("/api/item-rename", {
         method:"POST", headers:{"Content-Type":"application/json"},
         body:JSON.stringify({id:x.id,path:x.path,displayName:current,timestamp:x.timestamp})
@@ -251,9 +327,10 @@
       if (!r.ok || !d.ok) throw Error(d.error || "同步失败");
       x.path = d.path || x.path;
       x.name = d.name || x.name;
-      x.dirty = false;
+      if (x.displayName === current) { x.dirty = false; delete drafts[String(x.id)]; persistDrafts(); }
       render();
     } catch(e) {
+      if (quiet) throw e;
       alert("同步失败：" + e.message);
     } finally { btn?.classList.remove("working"); }
   }
@@ -269,6 +346,7 @@
       if (!r.ok || !d.ok) throw Error(d.error || "删除失败");
       state.items = state.items.filter(i => String(i.id) !== String(x.id));
       state.selected.delete(String(x.id));
+      delete drafts[String(x.id)];persistDrafts();
       render();
     } catch(e) { alert("删除失败：" + e.message); }
   }
@@ -292,15 +370,18 @@
           body:JSON.stringify({id:x.id,path:x.path,confirmed:true})
         });
         const d = await r.json();
-        if (r.ok && d.ok) state.items = state.items.filter(i => String(i.id) !== String(x.id));
-      } catch(_) {}
+        if (!r.ok || !d.ok) throw Error(d.error || "删除失败");
+        state.items = state.items.filter(i => String(i.id) !== String(x.id));
+        state.selected.delete(String(x.id)); delete drafts[String(x.id)];persistDrafts();
+      } catch(e) { alert(`删除“${x.displayName || x.name}”失败：${e.message}`); }
     }
-    state.selected.clear(); render();
+    render();
   }
 
   function render() {
     const box = document.querySelector(".yun-inbox");
     if (!box) return;
+    renderLabels();
     box.querySelector(".yun-selected-count").textContent = `已选择 ${state.selected.size} 项`;
 
     const list = box.querySelector(".yun-inbox-list");
@@ -323,6 +404,7 @@
       const thumb = x.type === "图片" && x.preview ? `<img src="${esc(x.preview)}" alt="">`
         : icon(x.type);
       const checked = state.selected.has(String(x.id));
+      row.classList.toggle("selected", checked);
       const title = esc(x.displayName || x.name || "未命名素材");
       const rx = x.regex ? `<span class="yun-tag yun-tag-rx">${esc(x.regex)}</span>` : "";
       const typeTag = `<span class="yun-tag yun-tag-type">${esc(typeName(x.type))}</span>`;
