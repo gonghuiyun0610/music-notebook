@@ -60,9 +60,10 @@
         </div>
       </div>
       <div class="yun-inbox-search"><input placeholder="搜索最近收集的内容…"></div>
-      <div class="yun-edit-tools" hidden>
+      <div class="yun-edit-tools">
         <div class="yun-filter-row">
           <button class="yun-filter-chip active" data-type-filter="全部">全部</button>
+          <button class="yun-filter-chip" data-type-filter="收藏">收藏</button>
           <button class="yun-filter-chip" data-type-filter="图片">图片</button>
           <button class="yun-filter-chip" data-type-filter="录音">录音</button>
           <button class="yun-filter-chip" data-type-filter="视频">视频</button>
@@ -131,7 +132,8 @@
     box.classList.toggle("browse-mode", state.mode === "browse");
     box.classList.toggle("edit-mode", state.mode === "edit");
     box.querySelector(".yun-mode-btn").textContent = state.mode === "browse" ? "编辑模式" : "浏览模式";
-    box.querySelector(".yun-edit-tools").hidden = state.mode !== "edit";
+    box.querySelector(".yun-edit-tools").hidden = false;
+    box.querySelector(".yun-batch-row").hidden = state.mode !== "edit";
   }
 
   async function load() {
@@ -215,7 +217,7 @@
 
   function filteredItems() {
     return state.items.filter(x => {
-      const editTypeOK = state.mode !== "edit" || state.typeFilter === "全部" || x.type === state.typeFilter || (state.typeFilter === "录音" && x.type === "音频");
+      const editTypeOK = state.typeFilter === "全部" || (state.typeFilter === "收藏" && x.favorite) || x.type === state.typeFilter || (state.typeFilter === "录音" && x.type === "音频");
       const regexOK = !state.regexSelected.length || String(x.regex || "").split(/[,，]/).some(label => state.regexSelected.includes(label.trim()));
       const q = state.query;
       const text = `${x.displayName || x.name || ""} ${x.name || ""} ${x.regex || ""} ${x.note || ""}`.toLowerCase();

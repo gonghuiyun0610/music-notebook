@@ -36,3 +36,11 @@
 .yun-inbox.browse-mode .yun-inbox-search{padding-bottom:8px}
 
 .yun-video-cover{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;pointer-events:none}.yun-media-toggle:has(.yun-video-cover) svg{background:#fff9;border-radius:50%}
+
+/* V10: confine covers and preserve controls in a short panel. */
+.yun-inbox .yun-inbox-thumb{position:relative;isolation:isolate;flex-shrink:0;width:42px;height:42px;min-width:42px;max-width:42px;max-height:42px}
+.yun-inbox .yun-media-toggle{position:relative;overflow:hidden}
+.yun-inbox .yun-video-cover{position:absolute;inset:0;width:42px;height:42px;max-width:42px;max-height:42px;object-fit:cover}
+.yun-inbox-head,.yun-inbox-search,.yun-edit-tools,.yun-inbox-tip{flex-shrink:0}
+.yun-inbox-list{min-height:0}
+.yun-batch-row[hidden]{display:none}
