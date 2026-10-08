@@ -52,3 +52,27 @@
 .yun-inbox.edit-mode .yun-video-thumb{background:transparent;border:0;box-shadow:none;display:grid;place-items:center}
 .yun-inbox.edit-mode .yun-media-toggle{background:transparent;color:var(--yun-ink);border:0;box-shadow:none;display:grid;place-items:center;padding:0}
 .yun-inbox .yun-star.active{color:#b47b18}
+
+/* V19: collector palette and icons, plain controls, editable browse titles. */
+.yun-inbox{--yun-ink:#655951;--yun-line:rgba(140,117,101,.13);--yun-soft:#fff9f0;--yun-accent:#b29381;color:var(--yun-ink);border-color:#eee1d2;box-shadow:0 16px 45px #65595124}
+.yun-inbox-tab{border:0;background:#d9bba5;color:#55483e;box-shadow:0 8px 24px #6559511a}
+.yun-inbox.browse-mode,.yun-inbox.edit-mode{background:rgba(255,249,240,.96)}
+.yun-inbox .yun-inbox-head,.yun-inbox .yun-edit-tools{background:transparent}
+.yun-inbox .yun-head-btn,.yun-inbox .yun-sync,.yun-inbox .yun-batch-sync{border:0;background:transparent;box-shadow:none;border-radius:0;color:var(--yun-ink)}
+.yun-inbox .yun-inbox-close,.yun-inbox .yun-icon-btn{color:#8c7565}
+.yun-inbox .yun-inbox-search input{border:0;background:#f4e9dc;color:var(--yun-ink)}
+.yun-inbox .yun-filter-chip{border:0;background:#f4e9dc;color:#78685d;border-radius:9px;padding:5px 7px}
+.yun-inbox .yun-filter-chip.active{background:#edcbb5;color:#55483e}
+.yun-inbox .yun-inbox-item{border:0;margin-top:5px;padding:8px 5px}
+.yun-inbox .yun-type-recording{background:#f5dfd9}.yun-inbox .yun-type-image{background:#e4eddf}.yun-inbox .yun-type-video{background:#e7e2f1}.yun-inbox .yun-type-file{background:#f5e9ce}.yun-inbox .yun-type-note{background:#e7e9f3}
+.yun-inbox .yun-inbox-item:hover{background:#eed9c6}
+.yun-inbox .yun-inbox-thumb,.yun-inbox .yun-video-thumb,.yun-inbox .yun-media-toggle{background:transparent;border:0;box-shadow:none;color:#8c7565}
+.yun-inbox .yun-asset-icon{display:block;width:26px;height:26px;flex-shrink:0;color:#8c7565}
+.yun-inbox .yun-media-toggle{display:grid;place-items:center;position:relative;padding:0}
+.yun-inbox .yun-media-caret{position:absolute;right:1px;bottom:1px;font-size:9px;line-height:1;color:#8c7565}
+.yun-inbox .yun-inbox-meta,.yun-inbox .yun-inbox-day,.yun-inbox .yun-selected-count,.yun-inbox .yun-inbox-empty{color:#8c7c71}
+.yun-inbox .yun-inbox-name{cursor:text}.yun-inbox .yun-inline-name{background:#fffaf3;border:0;box-shadow:none;color:var(--yun-ink);font-family:inherit;font-size:12px}
+.yun-inbox .yun-tag-type{background:#fff6e8;color:#8c7565}.yun-inbox .yun-tag-rx{background:#e8eedf;color:#718268}
+.yun-inbox .yun-inbox-tip{background:#f2e6d8;color:#8c7c71;border-top-color:#eee1d2}
+.yun-inbox .yun-check input{accent-color:#b29381}.yun-inbox .yun-star.active{color:#a37c42}
+.yun-preview-modal{background:#fff9f0;color:#655951}.yun-preview-file .yun-asset-icon{width:38px;height:38px;justify-self:center;color:#8c7565}

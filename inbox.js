@@ -3,7 +3,7 @@
 (() => {
   const API = localStorage.getItem("yunInboxApi") || "https://yun-music-api.jgjhhjybzh.workers.dev";
   const COLLECT_URL = API + "/collect";
-  const TYPES = ["最近收集","图片","录音","视频","文件","文字"];
+  const TYPES = ["录音","图片","视频","文件","记录"];
   const state = {
     mode: localStorage.getItem("yunInboxMode") || "browse",
     items: [],
@@ -14,7 +14,17 @@
   };
 
   const esc = s => String(s ?? "").replace(/[&<>\"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
-  const icon = t => ({图片:"🖼",录音:"🎙",音频:"🎙",视频:"🎬",文字:"✎",文件:"📄"}[t] || "📄");
+  const typeName = t => t === "音频" ? "录音" : t === "文字" ? "记录" : t;
+  const iconPaths = {
+    "录音": '<rect x="9" y="3" width="6" height="12" rx="3"/><path d="M5 10v2a7 7 0 0 0 14 0v-2M12 19v3M8 22h8"/>',
+    "图片": '<rect x="3" y="3" width="18" height="18" rx="3"/><circle cx="8" cy="8" r="1.5"/><path d="m3 17 5-5 4 4 3-3 6 6"/>',
+    "视频": '<rect x="3" y="6" width="13" height="12" rx="3"/><path d="m16 10 5-3v10l-5-3"/>',
+    "文件": '<path d="M3 7a2 2 0 0 1 2-2h5l2 3h7a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"/>',
+    "记录": '<path d="m15 4 5 5M4 20l4-1L21 6a2.8 2.8 0 0 0-4-4L4 15Z"/>'
+  };
+  const icon = t => '<svg class="yun-asset-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'+(iconPaths[typeName(t)]||iconPaths["文件"])+ '</svg>';
+  const typeClass = t => ({"录音":"recording","图片":"image","视频":"video","文件":"file","记录":"note"}[typeName(t)]||"file");
+  const mediaIcon = (t, expanded=false) => icon(t)+'<span class="yun-media-caret" aria-hidden="true">'+(expanded?'▾':'▶')+'</span>';
   const byId = id => state.items.find(x => String(x.id) === String(id));
   const token = () => localStorage.getItem("yunInboxSession") || "";
 
@@ -50,7 +60,6 @@
     box.className = "yun-inbox";
     box.innerHTML = `
       <div class="yun-inbox-head">
-        <span class="yun-inbox-note">♩</span>
         <strong>收集箱</strong>
         <div class="yun-inbox-head-actions">
           <button class="yun-head-btn yun-refresh-btn" type="button" title="刷新收集箱（仅加入新文件）" aria-label="刷新">↻</button>
@@ -64,19 +73,11 @@
         <div class="yun-filter-row">
           <button class="yun-filter-chip active" data-type-filter="全部">全部</button>
           <button class="yun-filter-chip" data-type-filter="收藏">收藏</button>
-          <button class="yun-filter-chip" data-type-filter="图片">图片</button>
           <button class="yun-filter-chip" data-type-filter="录音">录音</button>
+          <button class="yun-filter-chip" data-type-filter="图片">图片</button>
           <button class="yun-filter-chip" data-type-filter="视频">视频</button>
-          <button class="yun-filter-chip" data-type-filter="文字">文字</button>
           <button class="yun-filter-chip" data-type-filter="文件">文件</button>
-          <div class="yun-regex-wrap">
-            <button class="yun-filter-chip yun-regex-trigger" type="button">正则 ▾</button>
-            <div class="yun-regex-pop" hidden>
-              <input class="yun-regex-search" placeholder="输入首字母或正则名称">
-              <div class="yun-regex-results"></div>
-              <div class="yun-regex-selected"></div>
-            </div>
-          </div>
+          <button class="yun-filter-chip" data-type-filter="记录">记录</button>
         </div>
         <div class="yun-batch-row">
           <span class="yun-selected-count">已选择 0 项</span>
@@ -107,17 +108,6 @@
       render();
     });
 
-    const regexTrigger = box.querySelector(".yun-regex-trigger");
-    const regexPop = box.querySelector(".yun-regex-pop");
-    regexTrigger.onclick = e => {
-      e.stopPropagation();
-      regexPop.hidden = !regexPop.hidden;
-      if (!regexPop.hidden) renderRegexPicker();
-    };
-    regexPop.onclick = e => e.stopPropagation();
-    document.addEventListener("click", () => { regexPop.hidden = true; });
-
-    box.querySelector(".yun-regex-search").oninput = renderRegexPicker;
     box.querySelector(".yun-batch-sync").onclick = batchSync;
     box.querySelector(".yun-batch-delete").onclick = batchDelete;
 
@@ -168,56 +158,9 @@
     finally { btn.disabled=false; btn.classList.remove("working"); }
   }
 
-  function allRegexLabels() {
-    const s = new Set();
-    state.items.forEach(x => {
-      const v = String(x.regex || "").trim();
-      if (v) v.split(/[,，]/).map(t=>t.trim()).filter(Boolean).forEach(t=>s.add(t));
-    });
-    return [...s].sort((a,b)=>a.localeCompare(b,"zh-CN"));
-  }
-
-  function initials(v) {
-    const s = String(v || "").trim();
-    if (!s) return "";
-    return s[0].toLowerCase();
-  }
-
-  function renderRegexPicker() {
-    const box = document.querySelector(".yun-inbox");
-    if (!box) return;
-    const q = box.querySelector(".yun-regex-search").value.trim().toLowerCase();
-    const result = box.querySelector(".yun-regex-results");
-    const labels = allRegexLabels().filter(x => !q || x.toLowerCase().includes(q) || initials(x) === q[0]);
-    result.replaceChildren();
-    labels.forEach(label => {
-      const b = document.createElement("button");
-      b.type = "button";
-      b.className = "yun-regex-option";
-      b.textContent = label;
-      b.classList.toggle("selected", state.regexSelected.includes(label));
-      b.onclick = () => {
-        const i = state.regexSelected.indexOf(label);
-        if (i >= 0) state.regexSelected.splice(i,1);
-        else if (state.regexSelected.length < 5) state.regexSelected.push(label);
-        renderRegexPicker();
-        render();
-      };
-      result.append(b);
-    });
-    const selected = box.querySelector(".yun-regex-selected");
-    selected.innerHTML = state.regexSelected.map(x => `<button type="button" data-rx="${esc(x)}">${esc(x)} ×</button>`).join("");
-    selected.querySelectorAll("button").forEach(b => b.onclick = () => {
-      state.regexSelected = state.regexSelected.filter(x => x !== b.dataset.rx);
-      renderRegexPicker();
-      render();
-    });
-    box.querySelector(".yun-regex-trigger").textContent = state.regexSelected.length ? `正则 ${state.regexSelected.length}/5 ▾` : "正则 ▾";
-  }
-
   function filteredItems() {
     return state.items.filter(x => {
-      const editTypeOK = state.typeFilter === "全部" || (state.typeFilter === "收藏" && x.favorite) || x.type === state.typeFilter || (state.typeFilter === "录音" && x.type === "音频");
+      const editTypeOK = state.typeFilter === "全部" || (state.typeFilter === "收藏" && x.favorite) || typeName(x.type) === state.typeFilter;
       const regexOK = !state.regexSelected.length || String(x.regex || "").split(/[,，]/).some(label => state.regexSelected.includes(label.trim()));
       const q = state.query;
       const text = `${x.displayName || x.name || ""} ${x.name || ""} ${x.regex || ""} ${x.note || ""}`.toLowerCase();
@@ -245,7 +188,7 @@
     if (x.type === "图片") body.innerHTML = `<img src="${esc(src)}" alt="${esc(x.displayName || x.name || "")}">`;
     else if (x.type === "视频") body.innerHTML = `<video src="${esc(src)}" controls autoplay playsinline preload="metadata"></video>`;
     else if (["录音","音频"].includes(x.type)) body.innerHTML = `<audio src="${esc(src)}" controls autoplay preload="metadata"></audio>`;
-    else if (x.type === "文字") {
+    else if (["文字","记录"].includes(x.type)) {
       body.innerHTML = '<div class="yun-preview-loading">正在读取文字…</div>';
       fetch(src,{cache:"no-store"}).then(r=>{if(!r.ok)throw Error();return r.text();}).then(t=>{body.innerHTML="";const pre=document.createElement("pre");pre.textContent=t;body.append(pre);}).catch(()=>body.innerHTML='<div class="yun-preview-loading">暂时无法读取这份文字。</div>');
     } else body.innerHTML = `<div class="yun-preview-file">${icon(x.type)}<b>${esc(x.displayName || x.name || "文件")}</b><span>${esc(x.size || "")}</span></div>`;
@@ -255,28 +198,35 @@
   }
 
   function displayNameEditor(row, x) {
-    const title = row.querySelector(".yun-inbox-name");
-    title.title = "点击修改显示名称";
-    title.onclick = e => {
-      if (state.mode !== "edit") return;
-      e.stopPropagation();
-      const input = document.createElement("input");
-      input.className = "yun-inline-name";
-      input.value = x.displayName || x.name || "";
-      title.replaceWith(input);
-      input.focus(); input.select();
-      const save = async () => {
-        const v = input.value.trim();
-        if (v && v !== (x.displayName || x.name)) {
-          x.displayName = v;
-          x.dirty = true;
-          await saveMeta(x, {displayName:v}).catch(()=>{});
+    const title=row.querySelector(".yun-inbox-name");
+    title.title=state.mode==="browse"?"双击修改显示名称":"点击修改显示名称";
+    const edit=e=>{
+      e.preventDefault();e.stopPropagation();
+      if(row.querySelector(".yun-inline-name"))return;
+      const oldName=x.displayName,oldDirty=x.dirty;
+      const input=document.createElement("input");input.className="yun-inline-name";
+      input.value=x.displayName||x.name||"";input.setAttribute("aria-label","修改显示名称");
+      title.replaceWith(input);row.draggable=false;input.focus();input.select();
+      input.onclick=e=>e.stopPropagation();input.ondblclick=e=>e.stopPropagation();
+      let finished=false;
+      const save=async()=>{
+        if(finished)return;finished=true;
+        const v=input.value.trim();
+        if(v && v!==(x.displayName||x.name)){
+          input.disabled=true;x.displayName=v;x.dirty=true;
+          try{await saveMeta(x,{displayName:v});}
+          catch(error){x.displayName=oldName;x.dirty=oldDirty;alert("显示名称保存失败："+error.message);}
         }
         render();
       };
-      input.onblur = save;
-      input.onkeydown = ev => { if (ev.key === "Enter") input.blur(); if (ev.key === "Escape") render(); };
+      input.onblur=save;
+      input.onkeydown=ev=>{
+        if(ev.key==="Enter"){ev.preventDefault();input.blur();}
+        if(ev.key==="Escape"){ev.preventDefault();finished=true;render();}
+      };
     };
+    title.onclick=e=>{e.stopPropagation();if(state.mode==="edit")edit(e);};
+    title.ondblclick=e=>{e.stopPropagation();if(state.mode==="browse")edit(e);};
   }
 
   async function saveMeta(x, patch) {
@@ -368,14 +318,14 @@
         if (d !== day) { day = d; const h = document.createElement("div"); h.className="yun-inbox-day"; h.textContent=d; list.append(h); }
       }
       const row = document.createElement("div");
-      row.className = "yun-inbox-item";
+      row.className = "yun-inbox-item yun-type-"+typeClass(x.type);
       row.dataset.id = x.id;
       const thumb = x.type === "图片" && x.preview ? `<img src="${esc(x.preview)}" alt="">`
-        : x.type === "视频" && x.preview ? `<div class="yun-video-thumb">▶</div>` : icon(x.type);
+        : icon(x.type);
       const checked = state.selected.has(String(x.id));
       const title = esc(x.displayName || x.name || "未命名素材");
       const rx = x.regex ? `<span class="yun-tag yun-tag-rx">${esc(x.regex)}</span>` : "";
-      const typeTag = `<span class="yun-tag yun-tag-type">${esc(x.type === "音频" ? "录音" : x.type)}</span>`;
+      const typeTag = `<span class="yun-tag yun-tag-type">${esc(typeName(x.type))}</span>`;
       row.innerHTML = `
         ${state.mode === "edit" ? `<label class="yun-check"><input type="checkbox" ${checked?"checked":""}></label>` : ""}
         <div class="yun-inbox-thumb">${thumb}</div>
@@ -394,9 +344,9 @@
       if (state.mode === "edit") {
         const cb = row.querySelector('input[type="checkbox"]');
         cb.onchange = () => { cb.checked ? state.selected.add(String(x.id)) : state.selected.delete(String(x.id)); render(); };
-        displayNameEditor(row,x);
         row.querySelector(".yun-sync").onclick = e => { e.stopPropagation(); syncItem(x,e.currentTarget); };
       }
+      displayNameEditor(row,x);
       row.querySelector(".yun-star").onclick = async e => {
         e.stopPropagation(); x.favorite = !x.favorite;
         await saveMeta(x,{favorite:x.favorite}).catch(()=>{});
@@ -408,19 +358,14 @@
         const btn = document.createElement("button");
         btn.type = "button";
         btn.className = "yun-media-toggle";
-        btn.textContent = "▶";
+        btn.innerHTML = mediaIcon(x.type);
         btn.title = x.type === "视频" ? "点击展开视频" : "点击展开录音播放条";
         btn.setAttribute("aria-label",btn.title);
         row.querySelector(".yun-inbox-thumb").replaceChildren(btn);
-        if (x.type === "视频" && !x.thumbnail && !x.poster) {
-          const cover = document.createElement("video"); cover.muted=true; cover.playsInline=true; cover.preload="metadata";
-          cover.className="yun-video-cover"; cover.src=x.media+"#t=0.1"; btn.prepend(cover);
-          cover.onerror=()=>cover.remove();
-        }
         btn.onclick = e => {
           e.stopPropagation();
           const old = row.querySelector(".yun-inbox-audio,.yun-inbox-video");
-          if (old) { old.pause(); old.remove(); btn.textContent="▶"; return; }
+          if (old) { old.pause(); old.remove(); btn.innerHTML=mediaIcon(x.type); return; }
           const media = document.createElement(x.type === "视频" ? "video" : "audio");
           media.className = x.type === "视频" ? "yun-inbox-video" : "yun-inbox-audio";
           media.controls = true;
@@ -430,10 +375,10 @@
           media.src = x.media;
           if (x.type === "视频") media.ondblclick = () => openPreview(x);
           row.append(media);
-          btn.textContent="▾";
+          btn.innerHTML=mediaIcon(x.type,true);
           media.play().catch(() => {});
         };
-      } else if (["图片","文字"].includes(x.type)) {
+      } else if (["图片","文字","记录"].includes(x.type)) {
         row.ondblclick = e => { if (!e.target.closest("button,input,audio,video")) openPreview(x); };
       }
       list.append(row);
