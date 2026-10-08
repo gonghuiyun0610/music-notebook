@@ -76,6 +76,7 @@ const yunPractice=archiveRenderPractice;archiveRenderPractice=function(){yunPrac
   }
   function createColumn(title, parent=parentKey()) {
     if(!nodeExists(parent)){archiveNotice("请先选择有效栏目。");return null;}
+    if(parent.startsWith("point:")){archiveNotice("栏目不能放在知识块下，请选择栏目。");return null;}
     const f={id:uid(),title,parent};folders().push(f);expandAncestors(parent);
     Archive.selection={kind:"folder",id:f.id};Archive.view="directory";Yun.expanded="knowledge";
     changed();render();return f;
@@ -233,4 +234,166 @@ const yunPractice=archiveRenderPractice;archiveRenderPractice=function(){yunPrac
   },true);
   // Public helpers are also used by regression tests and optional future toolbar controls.
   window.YunSidebar={createColumn,createKnowledge,back,undo:()=>restoreEdit(edits.undo,edits.redo),redo:()=>restoreEdit(edits.redo,edits.undo)};
+})();
+
+/* V22: distinguish blocks, move directories, context deletion and shallow 3D tree. */
+(() => {
+  const ROOT="knowledge:root", protectedIds=new Set(["knowledge","practice","instrument","works",ROOT]);
+  let dragKey=null,contextMenu=null;
+  const kindOf=key=>key.slice(0,key.indexOf(":")),idOf=key=>key.slice(key.indexOf(":")+1);
+  const selectedKey=()=>Archive.selection?`${Archive.selection.kind}:${Archive.selection.id}`:ROOT;
+  const isColumn=n=>n&&n.kind!=="point";
+  function model(){
+    const nodes=[{key:ROOT,id:"root",kind:"root",title:"知识记录",parent:null,object:null}];
+    const add=(kind,o,parent,list,p)=>nodes.push({key:`${kind}:${o.id}`,id:o.id,kind,title:kind==="point"?blockTitle(o):o.title,parent:o.sidebarParent||parent,object:o,list,p});
+    for(const c of data.courses){if(!c.sidebarHidden)add("course",c,ROOT,data.courses);for(const ch of c.chapters)if(!ch.sidebarHidden)add("chapter",ch,`course:${c.id}`,c.chapters);}
+    for(const p of data.pages.filter(p=>p.kind!=="practice"&&!p.sidebarContainer))add(p.standalone?"standalone":"lesson",p,p.standalone?ROOT:`chapter:${p.chapterId}`,data.pages,p);
+    for(const f of data.sidebarFolders||[])nodes.push({key:`folder:${f.id}`,id:f.id,kind:"folder",title:f.title,parent:f.parent,object:f,list:data.sidebarFolders});
+    for(const p of data.pages.filter(p=>p.kind!=="practice")){
+      const visit=(list,parent)=>{for(const b of list){if(b.type==="group")add("point",b,parent,list,p);visit(b.children||[],b.type==="group"?`point:${b.id}`:parent);}};
+      visit(p.blocks,p.sidebarContainer?p.sidebarParent:p.standalone?`standalone:${p.id}`:`lesson:${p.id}`);
+    }
+    const map=new Map(nodes.map(n=>[n.key,n]));
+    for(const n of nodes)if(n.key!==ROOT&&!map.has(n.parent))n.parent=ROOT;
+    return nodes;
+  }
+  function descendants(key,nodes=model()){
+    const keys=new Set([key]);let added=true;
+    while(added){added=false;for(const n of nodes)if(keys.has(n.parent)&&!keys.has(n.key)){keys.add(n.key);added=true;}}
+    return keys;
+  }
+  function expand(key){const map=new Map(model().map(n=>[n.key,n])),seen=new Set();
+    while(key&&!seen.has(key)){seen.add(key);viewState.set("archive-tree:"+idOf(key),true);key=map.get(key)?.parent;}
+  }
+  function pageFor(target){
+    if(["lesson","standalone"].includes(target.kind))return target.object;
+    let p=data.pages.find(p=>p.sidebarContainer&&p.sidebarParent===target.key);
+    if(!p){p={id:uid(),title:target.title,category:"知识记录",kind:"knowledge",standalone:true,sidebarContainer:true,sidebarParent:target.key,blocks:[]};data.pages.push(p);}return p;
+  }
+  function move(sourceKey,targetKey,beforeKey=null){
+    const nodes=model(),map=new Map(nodes.map(n=>[n.key,n])),source=map.get(sourceKey),target=map.get(targetKey);
+    if(!source||!target||protectedIds.has(sourceKey)||sourceKey===targetKey)return false;
+    if(!isColumn(target)){status("只能移动到栏目下，不能放入知识块。");return false;}
+    if(descendants(sourceKey,nodes).has(targetKey)){status("不能移动到自己的子目录下。");return false;}
+    if(source.kind==="point"){
+      const destination=pageFor(target),moving=descendants(sourceKey,nodes);
+      const attached=nodes.filter(n=>n.kind==="point"&&moving.has(n.key));
+      const physicallyNested=new Set();walk(source.object.children||[],b=>physicallyNested.add(b.id));
+      for(const n of attached){if(physicallyNested.has(n.id))continue;const i=n.list.indexOf(n.object);if(i>=0)n.list.splice(i,1);destination.blocks.push(n.object);}
+      source.object.sidebarParent=targetKey;current=destination.id;
+    }else if(source.kind==="folder")source.object.parent=targetKey;
+    else source.object.sidebarParent=targetKey;
+    if(beforeKey){const siblings=model().filter(n=>n.parent===targetKey&&n.key!==sourceKey);const index=siblings.findIndex(n=>n.key===beforeKey);siblings.splice(index<0?siblings.length:index,0,source);siblings.forEach((n,i)=>{n.object.sidebarOrder=i;});}
+    Archive.selection={kind:source.kind,id:source.id};expand(targetKey);changed();render();return true;
+  }
+  const previousDelete=archiveDelete;
+  archiveDelete=function(kind,id){
+    if(protectedIds.has(id)||protectedIds.has(`${kind}:${id}`))return;
+    if(!["course","chapter","lesson","standalone","folder","point"].includes(kind))return previousDelete(kind,id);
+    const nodes=model(),n=nodes.find(n=>n.key===`${kind}:${id}`);if(!n)return;
+    archiveConfirm("删除「"+n.title+"」？","其中的子目录、知识块和内容将一起删除，可使用撤销恢复。",()=>{
+      const keys=descendants(n.key),removedIds=new Set([...keys].map(idOf));stop();
+      data.sidebarFolders=(data.sidebarFolders||[]).filter(f=>!keys.has(`folder:${f.id}`));
+      data.pages=data.pages.filter(p=>!keys.has(`lesson:${p.id}`)&&!keys.has(`standalone:${p.id}`));
+      // Preserve hidden legacy metadata carriers for chapters/pages moved elsewhere.
+      data.courses=data.courses.filter(c=>{
+        c.chapters=c.chapters.filter(ch=>{if(!keys.has(`chapter:${ch.id}`))return true;
+          if(data.pages.some(p=>p.chapterId===ch.id)){ch.sidebarHidden=true;return true;}return false;
+        });
+        if(!keys.has(`course:${c.id}`))return true;
+        if(c.chapters.length||data.pages.some(p=>p.courseId===c.id)){c.sidebarHidden=true;return true;}return false;
+      });
+      const prune=list=>list.filter(b=>!keys.has(`point:${b.id}`)).map(b=>{if(b.children)b.children=prune(b.children);return b;});data.pages.forEach(p=>p.blocks=prune(p.blocks));
+      data.relations=data.relations.filter(r=>!removedIds.has(r.from)&&!removedIds.has(r.to));data.practiceLists.forEach(l=>l.items=l.items.filter(id=>!removedIds.has(id)));
+      Archive.selection=null;Archive.view="directory";current=data.pages.find(p=>p.id===current)?.id||data.pages[0]?.id||null;changed();render();
+    });
+  };
+  function closeContext(){contextMenu?.remove();contextMenu=null;}
+  function context(e,n){e.preventDefault();e.stopPropagation();closeContext();Archive.selection={kind:n.kind,id:n.id};nav();
+    contextMenu=el("div",{class:"yun-context-menu",role:"menu"});const del=button("删除"+(n.kind==="point"?"知识块":"栏目"),()=>{closeContext();archiveDelete(n.kind,n.id);});del.setAttribute("role","menuitem");contextMenu.append(del);
+    contextMenu.style.left=Math.max(8,Math.min(e.clientX,window.innerWidth-180))+"px";contextMenu.style.top=Math.max(8,Math.min(e.clientY,window.innerHeight-60))+"px";document.body.append(contextMenu);del.focus();
+  }
+  document.addEventListener("click",e=>{if(contextMenu&&!contextMenu.contains(e.target))closeContext();});document.addEventListener("keydown",e=>{if(e.key==="Escape")closeContext();});
+  const pointIcon=()=>{const n=el("span",{class:"yun-icon yun-knowledge-icon","aria-hidden":"true"});n.innerHTML='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="5" y="3" width="14" height="18" rx="3"/><path d="M9 8h6M9 12h6M9 16h3"/></svg>';return n;};
+  function openNode(n){if(n.key===ROOT){Archive.selection=null;archiveNavigate("directory");return;}
+    Archive.selection={kind:n.kind,id:n.id};if(n.kind==="point")locate(n.p,n.object);else if(["lesson","standalone"].includes(n.kind)){current=n.id;archiveNavigate("knowledge");}else archiveDirectoryOverview(n.kind,n.id);
+  }
+  function wireDrop(row,target){
+    row.ondragover=e=>{if(!dragKey)return;const source=model().find(n=>n.key===dragKey);const rect=row.getBoundingClientRect(),edge=e.clientY<rect.top+rect.height*.25;
+      const destination=edge?model().find(n=>n.key===target.parent):target;
+      if(source&&isColumn(destination)&&!descendants(dragKey).has(destination.key)){e.preventDefault();e.stopPropagation();row.classList.add("yun-drop-target");e.dataTransfer.dropEffect="move";}
+    };
+    row.ondragleave=()=>row.classList.remove("yun-drop-target");
+    row.ondrop=e=>{if(!dragKey)return;e.preventDefault();e.stopPropagation();row.classList.remove("yun-drop-target");
+      const rect=row.getBoundingClientRect(),edge=e.clientY<rect.top+rect.height*.25;const key=dragKey;dragKey=null;move(key,edge?target.parent:target.key,edge?target.key:null);
+    };
+  }
+  yunKnowledgeTree=function(){
+    const nodes=model(),visited=new Set();
+    function branch(key){if(visited.has(key))return [];visited.add(key);
+      const children=nodes.filter(n=>n.parent===key).sort((a,b)=>(a.object?.sidebarOrder??1e6)-(b.object?.sidebarOrder??1e6));
+      return children.map(n=>{
+        const box=yunTree(n.title,n.kind,n.id,n.list,v=>{if(n.kind==="point")n.object.title=v;else n.object.title=v;},()=>openNode(n),nodes.some(x=>x.parent===n.key)?()=>branch(n.key):null);
+        const row=box.querySelector(".yun-tree-row");row.dataset.nodeKey=n.key;
+        // The leading folder symbol belongs only to columns.
+        const glyph=[...row.children].find(c=>c.classList.contains("yun-icon"));if(glyph){glyph.replaceWith(n.kind==="point"?pointIcon():yunIcon("folder"));}
+        row.oncontextmenu=e=>context(e,n);row.draggable=true;
+        row.ondragstart=e=>{if(e.target.closest?.("input")){e.preventDefault();return;}dragKey=n.key;row.classList.add("dragging");e.dataTransfer.effectAllowed="move";e.dataTransfer.setData("application/x-yun-directory",n.key);e.dataTransfer.setData("text/plain",n.key);e.stopPropagation();};
+        row.ondragend=()=>{dragKey=null;row.classList.remove("dragging");document.querySelectorAll(".yun-drop-target").forEach(x=>x.classList.remove("yun-drop-target"));};
+        const grip=row.querySelector(".yun-grip");if(grip)grip.ondragstart=row.ondragstart;
+        wireDrop(row,n);return box;
+      });
+    }return branch(ROOT);
+  };
+  const oldNav=nav;
+  nav=function(){oldNav();const rootRow=[...$("nav").querySelectorAll(".yun-module-row")].find(r=>r.querySelector(".yun-module-name")?.textContent.includes("知识百科"));
+    if(rootRow){const b=rootRow.querySelector(".yun-module-name");const text=b.children[b.children.length-1];if(text)text.textContent="知识记录";wireDrop(rootRow,model()[0]);}
+    for(const r of $("nav").querySelectorAll(".yun-module-row"))r.setAttribute("data-protected","true");
+  };
+  function positions(nodes){
+    const children=new Map();for(const n of nodes){if(!children.has(n.parent))children.set(n.parent,[]);children.get(n.parent).push(n);}
+    for(const list of children.values())list.sort((a,b)=>(a.object?.sidebarOrder??1e6)-(b.object?.sidebarOrder??1e6));
+    let leaf=0;const assigned=new Map(),seen=new Set();
+    function visit(n,depth){if(seen.has(n.key))return;seen.add(n.key);const cs=children.get(n.key)||[];cs.forEach(c=>visit(c,depth+1));
+      const x=cs.length?cs.reduce((s,c)=>s+(assigned.get(c.key)?.x??0),0)/cs.length:leaf++*115;
+      assigned.set(n.key,{...n,x,y:Math.min(depth,3)*70,z:depth>3?(depth-3)*34:(depth%2)*24});}
+    visit(nodes[0],0);for(const n of nodes)if(!seen.has(n.key))visit(n,1);
+    const center=(Math.max(1,leaf)-1)*115/2;return [...assigned.values()].map(n=>({...n,x:n.x-center,y:n.y-105}));
+  }
+  archiveRenderDirectory=function(){renderGraph($("blocks"));};
+  function renderGraph(root){
+    const nodes=model(),points=positions(nodes),map=new Map(nodes.map(n=>[n.key,n]));
+    const panel=el("section",{class:"yun-knowledge-graph"}),head=el("div",{class:"archive-section-head"},[el("h2",{text:"知识记录"}),el("span",{class:"muted",text:`${nodes.filter(n=>n.kind==="point").length} 个知识块 · 拖动旋转 · 滚轮缩放`})]);
+    const viewport=el("div",{class:"yun-knowledge-viewport"}),canvas=el("canvas",{role:"img","aria-label":"3D知识目录树，拖动旋转，点击节点打开"});viewport.append(canvas);
+    const picker=archiveSelect([["","选择栏目或知识块"],...nodes.slice(1).map(n=>[n.key,(n.kind==="point"?"知识块 · ":"栏目 · ")+n.title])],"");picker.onchange=()=>{const n=map.get(picker.value);if(n)openNode(n);};
+    const controls=el("div",{class:"archive-actions"},[picker,button("正面",()=>{ay=0;ax=.12;zoom=1;draw();}),button("＋",()=>{zoom=Math.min(3,zoom*1.2);draw();}),button("－",()=>{zoom=Math.max(.2,zoom/1.2);draw();})]);
+    panel.append(head,el("p",{class:"muted",text:"文件夹代表栏目，蓝色知识卡代表知识块。浅层树状排列，可旋转查看深度；点击节点打开。"}),viewport,controls);root.append(panel);
+    const g=canvas.getContext("2d");if(!g)return;
+    let ay=0,ax=.12,zoom=1,projected=[],drag=null;const selected=selectedKey();
+    function draw(){const w=viewport.clientWidth||700,h=viewport.clientHeight||480,ratio=Math.min(window.devicePixelRatio||1,2);canvas.width=w*ratio;canvas.height=h*ratio;canvas.style.width=w+"px";canvas.style.height=h+"px";g.setTransform(ratio,0,0,ratio,0,0);g.clearRect(0,0,w,h);
+      const extent=Math.max(360,...points.map(p=>Math.abs(p.x)*2+120));const scale=Math.min(w/extent,h/420)*zoom;
+      projected=points.map(p=>{const x=p.x*Math.cos(ay)+p.z*Math.sin(ay),z=-p.x*Math.sin(ay)+p.z*Math.cos(ay),y=p.y*Math.cos(ax)-z*Math.sin(ax),depth=p.y*Math.sin(ax)+z*Math.cos(ax),perspective=900/Math.max(300,900+depth);return {...p,px:w/2+x*scale*perspective,py:h/2+y*scale*perspective,depth,size:Math.max(5,12*scale*perspective)};});
+      const lookup=new Map(projected.map(p=>[p.key,p]));g.strokeStyle="#c2cbd4";g.lineWidth=1;for(const p of projected){const parent=lookup.get(p.parent);if(!parent)continue;g.beginPath();g.moveTo(parent.px,parent.py);g.lineTo(parent.px,p.py-18);g.lineTo(p.px,p.py-18);g.lineTo(p.px,p.py);g.stroke();}
+      projected.sort((a,b)=>b.depth-a.depth).forEach(p=>{g.globalAlpha=1;const s=p.size;g.fillStyle=p.key===selected?"#d5c2aa":p.kind==="point"?"#dce8f4":"#f0e5d5";
+        g.fillRect(p.px-s*1.3,p.py-s,s*2.6,s*2);g.strokeStyle=p.kind==="point"?"#6b8faa":"#9b8267";g.lineWidth=1.5;g.beginPath();g.moveTo(p.px-s*1.3,p.py-s);g.lineTo(p.px+s*1.3,p.py-s);g.lineTo(p.px+s*1.3,p.py+s);g.lineTo(p.px-s*1.3,p.py+s);g.lineTo(p.px-s*1.3,p.py-s);g.stroke();
+        if(p.kind==="point"){g.beginPath();g.moveTo(p.px-s*.65,p.py-s*.35);g.lineTo(p.px+s*.65,p.py-s*.35);g.moveTo(p.px-s*.65,p.py+s*.25);g.lineTo(p.px+s*.35,p.py+s*.25);g.stroke();}
+        else{g.fillStyle="#c9b293";g.fillRect(p.px-s*1.3,p.py-s*1.3,s*1.1,s*.3);}
+        if(nodes.length<80||p.key===selected||p.key===ROOT){g.font="12px system-ui";g.textAlign="center";g.fillStyle="#5d6268";const label=p.title.length>15?p.title.slice(0,14)+"…":p.title;g.fillText(label,p.px,p.py+s+18);}
+      });
+    }
+    canvas.style.touchAction="none";canvas.onpointerdown=e=>{drag={x:e.clientX,y:e.clientY,startX:e.clientX,startY:e.clientY,moved:false};canvas.setPointerCapture?.(e.pointerId);};
+    canvas.onpointermove=e=>{if(!drag)return;if(Math.hypot(e.clientX-drag.startX,e.clientY-drag.startY)>4)drag.moved=true;ay+=(e.clientX-drag.x)*.007;ax=Math.max(-.65,Math.min(.65,ax+(e.clientY-drag.y)*.007));drag.x=e.clientX;drag.y=e.clientY;draw();};
+    canvas.onpointerup=e=>{const click=drag&&!drag.moved;drag=null;if(click){const r=canvas.getBoundingClientRect(),x=e.clientX-r.left,y=e.clientY-r.top;const p=[...projected].reverse().find(p=>Math.hypot(p.px-x,p.py-y)<Math.max(18,p.size*1.7));if(p)openNode(map.get(p.key));}};
+    canvas.onpointercancel=()=>drag=null;canvas.addEventListener("wheel",e=>{e.preventDefault();zoom=Math.max(.2,Math.min(3,zoom*Math.exp(-e.deltaY*.001)));draw();},{passive:false});
+    const observer=new ResizeObserver(draw);observer.observe(viewport);draw();Archive.graphDispose=()=>{observer.disconnect();drag=null;};
+  }
+  const previousRender=render;
+  render=function(){closeContext();previousRender();if(Archive.view==="directory"){$("title").textContent="知识记录";$("crumb").textContent="主页 / 知识记录";
+      // The legacy render wrapper may append standalone cards; graph already includes them.
+      for(const panel of $("blocks").querySelectorAll(".archive-panel"))if(panel.querySelector("h2")?.textContent==="独立词条")panel.remove();
+    }
+    for(const span of document.querySelectorAll(".yun-map-hub span"))if(span.textContent==="知识百科")span.textContent="知识记录";
+  };
+  Object.assign(window.YunSidebar,{model,move,positions});
+  const previousPopup=yunPopup;yunPopup=function(anchor,title,items){return previousPopup(anchor,title.replace(/知识百科/g,"知识记录"),items);};
 })();

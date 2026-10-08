@@ -16,3 +16,17 @@
 .yun-knowledge-top .block.knowledge-board{margin-top:6px;padding-top:10px}
 .yun-knowledge-top .knowledge-board-title{margin-top:0;margin-bottom:8px}
 .yun-knowledge-top header{margin-bottom:0}
+
+/* V22: distinct knowledge cards, directory move feedback, shallow 3D view. */
+.yun-knowledge-icon{color:#6b8faa}
+.yun-tree-row[draggable="true"]{cursor:default}
+.yun-tree-row.dragging{opacity:.55;cursor:grabbing}
+.yun-tree-row.yun-drop-target,.yun-module-row.yun-drop-target{background:#dce8f4;border-radius:8px}
+.yun-context-menu{position:fixed;z-index:5000;min-width:156px;background:#fffaf3;box-shadow:0 8px 28px #65595126;border-radius:10px;padding:6px}
+.yun-context-menu button{width:100%;border:0;background:transparent;text-align:left;color:#9b6260;padding:10px;border-radius:6px}
+.yun-context-menu button:hover{background:#f5dfd9}
+.yun-knowledge-graph{background:rgba(255,253,249,.65);border-radius:14px;padding:14px 18px}
+.yun-knowledge-graph .archive-section-head{margin:4px 0 8px}.yun-knowledge-graph>p{font-size:12px;margin:4px 0 12px}
+.yun-knowledge-viewport{height:clamp(340px,65vh,680px);overflow:hidden;border-radius:12px;background:radial-gradient(ellipse at center,#f3f6f8,#fbf8f2)}
+.yun-knowledge-viewport canvas{display:block;cursor:grab}.yun-knowledge-viewport canvas:active{cursor:grabbing}
+@media(max-width:640px){.yun-knowledge-graph{padding:10px}.yun-knowledge-viewport{height:55vh}.yun-knowledge-graph .archive-actions select{width:100%;flex-basis:100%}}
