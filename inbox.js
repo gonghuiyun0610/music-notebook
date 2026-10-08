@@ -111,18 +111,20 @@
       box.setAttribute("aria-hidden", String(!open));
       box.inert = !open;
     };
-    const autoCollapse = () => {
-      clearTimeout(collapseTimer);
-      if (!pinned && !dragging) collapseTimer = setTimeout(() => setOpen(false), 250);
+    window.YunInbox.toggle = anchor => {
+      const rect=anchor?.getBoundingClientRect?.();
+      if(rect){box.style.left=Math.max(8,Math.min(rect.right+8,window.innerWidth-(state.mode==="edit"?390:320)-12))+"px";box.style.top=Math.max(12,Math.min(rect.top,window.innerHeight-320))+"px";}
+      setOpen(!box.classList.contains("open"));
     };
-    tab.onclick = () => setOpen(!box.classList.contains("open"));
+    const autoCollapse = () => {};
+    tab.onclick = () => window.YunInbox.toggle(tab);
     box.onmouseenter = tab.onmouseenter = () => clearTimeout(collapseTimer);
     box.onmouseleave = tab.onmouseleave = autoCollapse;
     const pin = box.querySelector(".yun-pin-btn");
     const applyPin = () => {
       pin.classList.toggle("pinned", pinned);
       pin.setAttribute("aria-pressed", String(pinned));
-      pin.title = pinned ? "已固定，点击取消固定" : "未固定，鼠标离开自动收纳";
+      pin.title = pinned ? "已固定，点击取消固定" : "点击入口展开或收起";
       pin.setAttribute("aria-label", pin.title);
     };
     pin.onclick = () => { pinned = !pinned; localStorage.setItem("yunInboxPinned", String(pinned)); applyPin(); };

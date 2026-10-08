@@ -43,3 +43,31 @@
 .yun-knowledge-graph{background:transparent;padding:0;box-shadow:none}
 .yun-knowledge-viewport{background:transparent;border-radius:0;height:clamp(360px,72vh,760px)}
 .yun-content-back{font-size:14px;display:inline-flex;align-items:center;gap:6px;white-space:nowrap}
+
+/* V25: white boards, pastel bookmarks and a compact fixed module shelf. */
+.block.knowledge-board,.yun-content-edit .block.knowledge-board,.yun-knowledge-top .block.knowledge-board,.yun-column-blocks .block.knowledge-board{background:#fff!important;background-image:none!important;border:0!important;box-shadow:0 4px 20px #65595108!important;border-radius:0 12px 12px 12px;padding:18px 18px 18px 62px;margin:38px 0 24px;overflow:visible}
+.block.knowledge-board.board-reading{padding-left:62px!important}
+.knowledge-board .knowledge-board-title{position:relative;margin:-46px 0 14px;min-height:32px;display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.knowledge-board-title .board-name{width:auto;max-width:100%;margin:0;padding:8px 16px;border-radius:9px 9px 0 0;background:#e5ddf0;color:#60566e;font:500 16px/1.4 system-ui,-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;overflow-wrap:anywhere}
+.knowledge-board:nth-of-type(3n+2) .board-name{background:#dce9e1;color:#52695e}.knowledge-board:nth-of-type(3n) .board-name{background:#f3dfd4;color:#806452}
+.knowledge-board-title .board-practice-actions{margin:0;display:flex;gap:8px;align-items:center}
+.knowledge-board-title .board-practice-actions button{border:0!important;background:transparent!important;box-shadow:none!important;color:#8b7a69;padding:5px 4px;font-size:12px;white-space:nowrap}
+.knowledge-board .board-local-tools{left:-8px;top:48px;z-index:1400!important;width:58px;padding:5px 4px;gap:3px;background:#f1dfd5;border:0;border-radius:8px 0 0 8px;box-shadow:none}
+.board-inbox-button{font:500 11px/1.5 system-ui,sans-serif;color:#796254;border:0;background:transparent;padding:6px 0;width:100%;white-space:nowrap}
+.knowledge-board .board-add-menu>summary{width:100%;height:30px;border-radius:4px;background:#dfebdf;color:#667b69;font-size:22px}
+.knowledge-board .board-options-button{border:0;background:#e5ddf0;color:#746584;width:100%;height:28px;padding:0}
+.board-editing .board-module-dock,.board-editing .board-module-dock.dock-folded{position:relative;top:auto;left:auto;display:flex;align-items:center;gap:12px;width:100%;min-height:0;max-height:none;flex:none;margin:0 0 10px;padding:6px 8px;border:0;border-radius:8px;background:#f5f2ed;box-shadow:none;z-index:40}
+.board-editing .board-module-dock-head,.board-editing .board-module-dock.dock-folded .board-module-dock-head{height:auto;min-height:0;flex-direction:row;padding:0;justify-content:flex-start;gap:8px;flex-shrink:0}
+.board-editing .board-module-dock.dock-folded .board-module-dock-head strong{writing-mode:horizontal-tb;letter-spacing:0}
+.board-editing .board-module-dock-list{flex:1;min-width:0;display:flex;flex-direction:row;align-items:center;gap:8px;max-height:72px;overflow:auto;padding:0;scrollbar-width:none}
+.board-editing .board-module-dock.dock-folded .board-module-dock-list{display:none}
+.board-editing .board-module-thumb-frame{max-width:96px;max-height:60px;border:0;border-radius:5px;box-shadow:none}
+.board-module-dock-toggle{font-size:15px;background:#e5ddf0;color:#746584}
+.board-editing .knowledge-board-scroll,.yun-content-edit .board-editing .knowledge-board-scroll{display:block;overflow:hidden;scrollbar-width:none;min-height:240px;height:clamp(260px,58dvh,680px);max-height:none;background:#fff!important;cursor:default;overscroll-behavior:contain}
+.board-editing .knowledge-board-surface,.yun-content-edit .board-editing .knowledge-board-surface{background:#fff!important;background-image:none!important}
+.board-editing .knowledge-board-scroll::-webkit-scrollbar,.board-module-dock-list::-webkit-scrollbar{display:none}
+.board-editing .whiteboard-content-body{scrollbar-width:none}.board-editing .whiteboard-content-body::-webkit-scrollbar{display:none}
+.knowledge-board-scroll.board-panning,.knowledge-board-scroll.board-panning *{cursor:grabbing!important;user-select:none!important}
+.yun-add-knowledge{background:#e9efe6;border:0;border-radius:9px;color:#65745c;font-size:13px;margin-top:20px}
+body:has(.board-inbox-button) .yun-inbox-tab{display:none}
+@media(max-width:640px){.block.knowledge-board,.yun-content-edit .block.knowledge-board,.yun-knowledge-top .block.knowledge-board,.yun-column-blocks .block.knowledge-board{padding:14px 10px 14px 52px}.block.knowledge-board.board-reading{padding-left:52px!important}.knowledge-board-title .board-name{font-size:14px;padding:8px 12px}.knowledge-board .board-local-tools{width:48px}.board-editing .board-module-dock{gap:6px;padding:5px}.board-module-dock-head strong{font-size:11px}.knowledge-board-title .board-practice-actions button{font-size:11px}}

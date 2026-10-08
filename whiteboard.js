@@ -311,7 +311,8 @@ function boardLocalTools(board, list) {
   const panel = el("div", {class:"board-add-options"});
   panel.append(button("标题", () => {menu.open=false;boardAddHeading(board);}));
   BOARD_TYPES.forEach(([type,name]) => panel.append(button(name, () => {menu.open=false;boardAddPart(board,type);})));
-  menu.append(panel);tools.append(menu,button("⋯",()=>boardMenu(board,list),"board-options-button"));
+  menu.append(panel);
+  tools.append(button("灵感箱",e=>window.YunInbox?.toggle?.(e.currentTarget),"board-inbox-button"),menu,button("⋯",()=>boardMenu(board,list),"board-options-button"));
   return tools;
 }
 
@@ -403,7 +404,7 @@ function boardContent(b, list, owner) {
           const vp=restored?.closest?.(".knowledge-board-scroll");
           if(!restored||!vp)return;
           const scale=boardView(owner.id).scale||1;
-          const dockSpace=owner.dockCollapsed?64:286;
+          const dockSpace=0;
           vp.scrollLeft=Math.max(0,layout.x*scale-dockSpace-18);
           vp.scrollTop=Math.max(0,layout.y*scale-18);
           const v=boardView(owner.id);v.left=vp.scrollLeft;v.top=vp.scrollTop;
@@ -418,7 +419,7 @@ function boardContent(b, list, owner) {
     if(editing && b.collapsed){
       // V6：收纳模块进入独立“模块栏”。原始 layout 完全不改，展开时恢复最后位置/大小。
       // 这里只负责生成完整鸟瞰缩略图；位置与占位尺寸由模块栏 wrapper 管理。
-      const maxW=236, maxH=148;
+      const maxW=96, maxH=60;
       const scale=Math.min(1,maxW/Math.max(1,layout.width),maxH/Math.max(1,layout.height));
       section.style.left="0px";
       section.style.top="0px";
@@ -654,9 +655,10 @@ function renderBoard(b, list) {
       if(next!==b.title){b.title=next;changed();nav();}
     };
   }
-  titleRow.append(title);section.append(titleRow);
-  if(editing) section.append(boardLocalTools(b,list));
-  else section.append(boardPracticeActions(b));
+  titleRow.append(title,boardPracticeActions(b));section.append(titleRow);
+  const localTools=boardLocalTools(b,list);
+  if(!editing){localTools.querySelector(".board-add-menu")?.remove();localTools.querySelector(".board-options-button")?.remove();}
+  section.append(localTools);
   // 顶部仅保留名称；旧版折叠白板自动展示，避免出现没有展开入口的空白。
   section.append(boardTags(b));
   const headings = el("div", { class: "knowledge-headings" });
@@ -720,10 +722,10 @@ function renderBoard(b, list) {
     const node=boardContent(child,b.children,b);
     if(editing && child.collapsed){
       const l=child.layout||BOARD_DEFAULTS[child.type]||{width:320,height:180};
-      const scale=Math.min(1,236/Math.max(1,l.width),148/Math.max(1,l.height));
+      const scale=Math.min(1,96/Math.max(1,l.width),60/Math.max(1,l.height));
       const frame=el("div",{class:"board-module-thumb-frame",title:"点击恢复到上次编辑的位置和大小"});
-      frame.style.width=Math.max(72,l.width*scale)+"px";
-      frame.style.height=Math.max(54,l.height*scale)+"px";
+      frame.style.width=Math.max(48,l.width*scale)+"px";
+      frame.style.height=Math.max(30,l.height*scale)+"px";
       const del=button("×",e=>{
         e?.preventDefault?.();e?.stopPropagation?.();
         const d=el("dialog",{class:"module-delete-dialog"},[
@@ -790,17 +792,27 @@ function renderBoard(b, list) {
   }
   const stage=el("div",{class:"board-stage"});stage.append(surface);
   // 模块栏是视口 UI，不属于白板坐标内容；因此白板缩放/滚动不会改变它的尺寸。
-  if(editing && dock) viewport.append(dock);
+  if(editing && dock) section.append(dock);
   viewport.append(stage);
   if(editing){
     // V6.1：无论知识块里只有 1 个还是多个模块，只要当前有展开模块，
     // 点击白板/视口真正空白处就收纳。模块、模块栏、工具和表单控件不会误触。
     viewport.addEventListener("pointerdown",e=>{
+      if(e.button!==0)return;
       if(e.target.closest?.(".whiteboard-content,.board-module-dock,.board-local-tools")) return;
       if(e.target.closest?.("button,input,textarea,select,a,[contenteditable=true]")) return;
       boardCollapseActive(b);
     });
     boardScaleSurface(viewport,surface,b);
+    boardViewportGestures(viewport,surface,b);
+  }else{
+    section.ondblclick=e=>{
+      if(e.target.closest?.(".whiteboard-content,.knowledge-board-title,.board-local-tools,button,input,textarea,select,a,[contenteditable=true]"))return;
+      const found=archiveFind(b.id);if(!found)return;
+      current=found.p.id;Archive.selection={kind:"point",id:b.id};Archive.view="knowledge";
+      editing=true;boardSelectedKnowledge=b.id;render();
+      requestAnimationFrame(()=>document.getElementById("block-"+b.id)?.scrollIntoView({block:"start"}));
+    };
   }
   section.append(viewport);
   requestAnimationFrame(()=>{viewport.scrollLeft=view.left;viewport.scrollTop=view.top;});
@@ -844,4 +856,26 @@ function boardScaleSurface(viewport,surface,board){
   if(stage?.classList.contains("board-stage")){
     stage.style.width=board.board.width*scale+"px";stage.style.height=board.board.height*scale+"px";
   }
+}
+
+// Keep the dock outside this viewport. Hidden native scrolling supplies canvas
+// coordinates, so dragging modules and dropping assets retain their positions.
+function boardViewportGestures(viewport,surface,board){
+  const view=boardView(board.id);let pan=null;
+  const finish=e=>{if(!pan)return;viewport.releasePointerCapture?.(pan.id);pan=null;viewport.classList.remove("board-panning");};
+  viewport.addEventListener("pointerdown",e=>{
+    if(e.button!==2)return;e.preventDefault();e.stopImmediatePropagation();
+    pan={id:e.pointerId,x:e.clientX,y:e.clientY,left:viewport.scrollLeft,top:viewport.scrollTop};
+    viewport.setPointerCapture?.(e.pointerId);viewport.classList.add("board-panning");
+  },true);
+  viewport.addEventListener("pointermove",e=>{if(!pan)return;e.preventDefault();e.stopImmediatePropagation();viewport.scrollLeft=pan.left-(e.clientX-pan.x);viewport.scrollTop=pan.top-(e.clientY-pan.y);view.left=viewport.scrollLeft;view.top=viewport.scrollTop;},true);
+  viewport.addEventListener("pointerup",finish,true);viewport.addEventListener("pointercancel",finish,true);viewport.addEventListener("lostpointercapture",()=>{pan=null;viewport.classList.remove("board-panning");});
+  viewport.addEventListener("contextmenu",e=>e.preventDefault());
+  viewport.addEventListener("wheel",e=>{
+    if(e.target.closest?.("input,textarea,select,[contenteditable=true]"))return;
+    e.preventDefault();e.stopImmediatePropagation();const r=viewport.getBoundingClientRect(),x=e.clientX-r.left,y=e.clientY-r.top,old=view.scale;
+    const worldX=(viewport.scrollLeft+x)/old,worldY=(viewport.scrollTop+y)/old;
+    view.scale=Math.max(.08,Math.min(3,old*Math.exp(-e.deltaY*.0015)));boardScaleSurface(viewport,surface,board);
+    viewport.scrollLeft=Math.max(0,worldX*view.scale-x);viewport.scrollTop=Math.max(0,worldY*view.scale-y);view.left=viewport.scrollLeft;view.top=viewport.scrollTop;
+  },{passive:false,capture:true});
 }

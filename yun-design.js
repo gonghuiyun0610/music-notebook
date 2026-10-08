@@ -219,10 +219,7 @@ const yunPractice=archiveRenderPractice;archiveRenderPractice=function(){yunPrac
     }
     if(edits.baseline===null||edits.replaying)edits.baseline=snapshot();
     document.body.classList.toggle("yun-knowledge-top",Archive.view==="knowledge");
-    const toolbar=$("yun-toolbar");if(toolbar&&!$("yun-back")){
-      const b=yunButton("","arrow",back,"yun-tool yun-back");b.id="yun-back";b.title="返回上一界面";b.setAttribute("aria-label",b.title);toolbar.prepend(b);
-    }
-    // Home remains a home icon. The separate back arrow never jumps home.
+    $("yun-back")?.remove();
   };
   document.addEventListener("keydown",e=>{
     if(e.isComposing||e.altKey)return;
@@ -236,6 +233,31 @@ const yunPractice=archiveRenderPractice;archiveRenderPractice=function(){yunPrac
   window.YunSidebar={createColumn,createKnowledge,back,undo:()=>restoreEdit(edits.undo,edits.redo),redo:()=>restoreEdit(edits.redo,edits.undo)};
 })();
 
+/* V25: add a sibling knowledge block from a column or its browsing content. */
+(() => {
+  function addHere(){
+    const nodes=window.YunSidebar.model(),selected=Archive.selection?`${Archive.selection.kind}:${Archive.selection.id}`:"knowledge:root";
+    const node=nodes.find(n=>n.key===selected);
+    const parent=node?.kind==="point"?node.parent:(node?.key||"knowledge:root");
+    const input=archiveInput("", "知识块名称");
+    const dialog=el("dialog",{},[el("h2",{text:"新增知识块"}),input]);
+    dialog.append(button("取消",()=>dialog.close()),button("创建",()=>{
+      const title=input.value.trim();if(!title){input.focus();return;}
+      dialog.close();const b=window.YunSidebar.createKnowledge(title,parent);
+      requestAnimationFrame(()=>document.getElementById("block-"+b.id)?.scrollIntoView({block:"start"}));
+    }));
+    input.onkeydown=e=>{if(e.key==="Enter"){e.preventDefault();dialog.querySelectorAll("button")[1].click();}};
+    dialog.onclose=()=>dialog.remove();document.body.append(dialog);dialog.showModal();input.focus();
+  }
+  const previous=render;
+  render=function(){previous();$("yun-back")?.remove();
+    if(!["directory","knowledge"].includes(Archive.view))return;
+    if(!$("blocks").querySelector(".knowledge-board"))return;
+    $("blocks").querySelectorAll(".new-board-entry").forEach(b=>b.remove());
+    $("blocks").append(button("＋ 新增知识块",addHere,"new-board-entry yun-add-knowledge"));
+  };
+})();
+
 /* V22: distinguish blocks, move directories, context deletion and shallow 3D tree. */
 (() => {
   const ROOT="knowledge:root", UNCLASSIFIED="folder:yun-unclassified", protectedIds=new Set(["knowledge","practice","instrument","works",ROOT,UNCLASSIFIED,"yun-unclassified"]);
@@ -245,7 +267,8 @@ const yunPractice=archiveRenderPractice;archiveRenderPractice=function(){yunPrac
   const isColumn=n=>n&&n.kind!=="point";
   function model(){
     data.sidebarFolders ||= [];
-    if(!data.sidebarFolders.some(f=>f.id==="yun-unclassified"))data.sidebarFolders.unshift({id:"yun-unclassified",title:"未归类",parent:ROOT,sidebarOrder:-1});
+    if(!data.sidebarFolders.some(f=>f.id==="yun-unclassified"))data.sidebarFolders.push({id:"yun-unclassified",title:"未归类",parent:ROOT});
+    const unc=data.sidebarFolders.find(f=>f.id==="yun-unclassified");unc.parent=ROOT;delete unc.sidebarOrder;
     const nodes=[{key:ROOT,id:"root",kind:"root",title:"知识记录",parent:null,object:null}];
     const add=(kind,o,parent,list,p)=>nodes.push({key:`${kind}:${o.id}`,id:o.id,kind,title:kind==="point"?blockTitle(o):o.title,parent:o.sidebarParent||parent,object:o,list,p});
     for(const c of data.courses){if(!c.sidebarHidden)add("course",c,ROOT,data.courses);for(const ch of c.chapters)if(!ch.sidebarHidden)add("chapter",ch,`course:${c.id}`,c.chapters);}
@@ -341,7 +364,7 @@ const yunPractice=archiveRenderPractice;archiveRenderPractice=function(){yunPrac
   yunKnowledgeTree=function(){
     const nodes=model(),visited=new Set();
     function branch(key){if(visited.has(key))return [];visited.add(key);
-      const children=nodes.filter(n=>n.parent===key).sort((a,b)=>(a.object?.sidebarOrder??1e6)-(b.object?.sidebarOrder??1e6));
+      const children=nodes.filter(n=>n.parent===key).sort((a,b)=>a.key===UNCLASSIFIED?1:b.key===UNCLASSIFIED?-1:(a.object?.sidebarOrder??1e6)-(b.object?.sidebarOrder??1e6));
       return children.map(n=>{
         const box=yunTree(n.title,n.kind,n.id,n.list,v=>{if(n.kind==="point")n.object.title=v;else n.object.title=v;},()=>openNode(n),nodes.some(x=>x.parent===n.key)?()=>branch(n.key):null);
         const row=box.querySelector(".yun-tree-row");row.dataset.nodeKey=n.key;
@@ -353,14 +376,17 @@ const yunPractice=archiveRenderPractice;archiveRenderPractice=function(){yunPrac
         row.ondragend=()=>{dragKey=null;row.classList.remove("dragging");document.querySelectorAll(".yun-drop-target").forEach(x=>x.classList.remove("yun-drop-target"));};
         const grip=row.querySelector(".yun-grip");if(grip)grip.ondragstart=row.ondragstart;
         if(protectedIds.has(n.key)){row.querySelector(".yun-minus")?.remove();grip?.remove();}
-        if(isColumn(n)){
-          const name=row.querySelector(".yun-tree-link");
+        {
+          // Replace the original button: el() registered an immediate click
+          // listener, so assigning onclick alone would not stop navigation.
+          let name=row.querySelector(".yun-tree-link");
+          if(name){const clean=el("button",{type:"button",text:n.title,class:name.className});name.replaceWith(clean);name=clean;}
           let openTimer;
           const contextHandler=row.oncontextmenu;row.oncontextmenu=e=>{clearTimeout(openTimer);contextHandler(e);};
-          if(name){name.onclick=e=>{e.stopPropagation();clearTimeout(openTimer);openTimer=setTimeout(()=>openNode(n),280);};
+          if(name){name.onclick=e=>{e.stopPropagation();clearTimeout(openTimer);if(e.detail>1)return;openTimer=setTimeout(()=>openNode(n),550);};
           name.ondblclick=e=>{e.preventDefault();e.stopPropagation();clearTimeout(openTimer);
-            const input=archiveInput(n.title);input.className="yun-sidebar-rename";input.setAttribute("aria-label","修改栏目名称");name.replaceWith(input);row.draggable=false;
-            let done=false;const finish=save=>{if(done)return;done=true;const title=input.value.trim();if(save&&title&&title!==n.title){n.object.title=title;changed();}nav();};
+            const input=archiveInput(n.title);input.className="yun-sidebar-rename";input.setAttribute("aria-label",n.kind==="point"?"修改知识块名称":"修改栏目名称");name.replaceWith(input);row.draggable=false;
+            let done=false;const finish=save=>{if(done)return;done=true;const title=input.value.trim();if(save&&title&&title!==n.title){n.object.title=title;changed();render();}else nav();};
             input.onclick=e=>e.stopPropagation();input.ondblclick=e=>e.stopPropagation();input.onblur=()=>finish(true);
             input.onkeydown=e=>{if(e.key==="Enter"){e.preventDefault();finish(true);}if(e.key==="Escape"){e.preventDefault();finish(false);}};input.focus();input.select?.();
           };
