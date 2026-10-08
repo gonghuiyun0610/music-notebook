@@ -1,39 +1,126 @@
 {
   "version": 1,
-  "pages": [],
+  "pages": [
+    {
+      "id": "welcome",
+      "title": "十六分音符 · 看见节奏",
+      "category": "节奏",
+      "blocks": [
+        {
+          "id": "knowledge-wrap-demo",
+          "type": "group",
+          "title": "基础 Pop Groove",
+          "tags": [],
+          "practiceTags": [],
+          "children": [
+            {
+              "id": "demo",
+              "type": "rhythm",
+              "name": "基础 Pop Groove",
+              "bpm": 90,
+              "swing": 50,
+              "tracks": {
+                "kick": [
+                  1,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  1,
+                  0,
+                  1,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  1,
+                  0
+                ],
+                "snare": [
+                  0,
+                  0,
+                  0,
+                  0,
+                  1,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  1,
+                  0,
+                  0,
+                  0
+                ],
+                "hihat": [
+                  1,
+                  0,
+                  1,
+                  0,
+                  1,
+                  0,
+                  1,
+                  0,
+                  1,
+                  0,
+                  1,
+                  0,
+                  1,
+                  0,
+                  1,
+                  0
+                ]
+              },
+              "children": [],
+              "tags": [],
+              "practiceTags": [],
+              "title": "基础 Pop Groove",
+              "meter": "4/4",
+              "bars": 1,
+              "visible": [
+                "kick",
+                "snare",
+                "hihat"
+              ],
+              "muted": [],
+              "layout": {
+                "x": 24,
+                "y": 24,
+                "width": 1050,
+                "height": 460
+              },
+              "collapsed": false,
+              "snap": 1,
+              "fineHits": {},
+              "editorView": {
+                "left": 0,
+                "start": 0,
+                "cursor": 0,
+                "origin": "bar",
+                "hand": false,
+                "followStart": true,
+                "loop": true,
+                "loopA": 0,
+                "loopB": 16,
+                "drumSelection": null
+              }
+            }
+          ],
+          "board": {
+            "width": 1600,
+            "height": 1000
+          },
+          "headings": [],
+          "collapsed": false
+        }
+      ],
+      "kind": "knowledge"
+    }
+  ],
   "presets": [],
-  "practiceCategories": [],
-  "courses": [
-    {
-      "id": "70443829-f093-4249-9fd9-8fc41a33f401",
-      "title": "人声合音",
-      "chapters": []
-    }
-  ],
-  "relations": [],
-  "practiceLists": [],
-  "dailyPlans": [],
-  "practiceSessions": [],
-  "instruments": [
-    {
-      "id": "ce210601-919c-4796-bb6a-bf0fe419c65b",
-      "name": "电吉他",
-      "items": [],
-      "sessions": [],
-      "plans": []
-    },
-    {
-      "id": "12dee364-0fb3-4d9f-8d1d-451b3c3a5879",
-      "name": "键盘",
-      "items": [],
-      "sessions": [],
-      "plans": []
-    }
-  ],
-  "works": [],
-  "archiveSettings": {
-    "title": "YUN的音乐档案",
-    "tagline": "听过，练过，留下过"
-  },
-  "archiveInitialized": true
+  "practiceCategories": []
 }
