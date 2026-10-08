@@ -170,7 +170,7 @@
     const s = new Set();
     state.items.forEach(x => {
       const v = String(x.regex || "").trim();
-      if (v) s.add(v);
+      if (v) v.split(/[,，]/).map(t=>t.trim()).filter(Boolean).forEach(t=>s.add(t));
     });
     return [...s].sort((a,b)=>a.localeCompare(b,"zh-CN"));
   }
@@ -216,7 +216,7 @@
   function filteredItems() {
     return state.items.filter(x => {
       const editTypeOK = state.mode !== "edit" || state.typeFilter === "全部" || x.type === state.typeFilter || (state.typeFilter === "录音" && x.type === "音频");
-      const regexOK = !state.regexSelected.length || state.regexSelected.includes(String(x.regex || ""));
+      const regexOK = !state.regexSelected.length || String(x.regex || "").split(/[,，]/).some(label => state.regexSelected.includes(label.trim()));
       const q = state.query;
       const text = `${x.displayName || x.name || ""} ${x.name || ""} ${x.regex || ""} ${x.note || ""}`.toLowerCase();
       return editTypeOK && regexOK && (!q || text.includes(q));
@@ -409,6 +409,11 @@
         btn.title = x.type === "视频" ? "点击展开视频" : "点击展开录音播放条";
         btn.setAttribute("aria-label",btn.title);
         row.querySelector(".yun-inbox-thumb").replaceChildren(btn);
+        if (x.type === "视频" && !x.thumbnail && !x.poster) {
+          const cover = document.createElement("video"); cover.muted=true; cover.playsInline=true; cover.preload="metadata";
+          cover.className="yun-video-cover"; cover.src=x.media+"#t=0.1"; btn.prepend(cover);
+          cover.onerror=()=>cover.remove();
+        }
         btn.onclick = e => {
           e.stopPropagation();
           const old = row.querySelector(".yun-inbox-audio,.yun-inbox-video");

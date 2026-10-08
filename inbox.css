@@ -34,3 +34,5 @@
 .yun-inbox.edit-mode .yun-filter-row{flex-wrap:wrap}
 .yun-inbox.browse-mode .yun-inbox-item{min-height:48px}
 .yun-inbox.browse-mode .yun-inbox-search{padding-bottom:8px}
+
+.yun-video-cover{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;pointer-events:none}.yun-media-toggle:has(.yun-video-cover) svg{background:#fff9;border-radius:50%}
