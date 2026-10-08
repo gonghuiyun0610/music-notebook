@@ -309,7 +309,6 @@ function boardLocalTools(board, list) {
   const menu = el("details", {class:"board-add-menu"});
   menu.append(el("summary", {text:"＋", "aria-label":"添加白板部件"}));
   const panel = el("div", {class:"board-add-options"});
-  panel.append(button("标题", () => {menu.open=false;boardAddHeading(board);}));
   BOARD_TYPES.forEach(([type,name]) => panel.append(button(name, () => {menu.open=false;boardAddPart(board,type);})));
   menu.append(panel);
   const practice=button("练",()=>markPractice(board),"board-practice-link");
@@ -374,6 +373,7 @@ function inboxApplyToBlock(item,b){
   b.inboxSource={id:item.id||item.fs_id||"",path:item.path||"",type:item.type||"文件"};
   if(wanted==="image"||wanted==="audio"){
     b.src=item.media||item.preview||item.url||"";
+    delete b.assetId;delete b.assetName;
     b.caption=b.caption||item.name||"";
   }else{
     b.content=item.type==="文字"?(item.text||item.content||item.name||""):[item.name||"文件",item.media||item.preview||item.url||item.path||""].filter(Boolean).join("\n");
@@ -456,7 +456,7 @@ function boardContent(b, list, owner) {
     name.onblur=()=>{b.title=name.value.trim()||blockTitle(b);b.name=b.title;name.value=b.title;name.readOnly=true;head.classList.remove("naming");sizeName();changed();nav();};
     name.onkeydown=e=>{if(!name.readOnly && e.key==="Enter"){e.preventDefault();name.blur();}if(!name.readOnly && e.key==="Escape"){name.value=blockTitle(b);name.blur();}};
     head.append(name);
-    head.append(
+    if(!["midi","rhythm"].includes(b.type))head.append(
       button("⋯", () => {
         const d = el("dialog", {}, [el("h2", { text: "内容块操作" })]);
         d.append(
@@ -480,6 +480,15 @@ function boardContent(b, list, owner) {
         d.showModal();
       }),
     );
+    if(["midi","rhythm"].includes(b.type)){
+      const controls=el("div",{class:"content-window-controls"});
+      for(const [mode,label,path] of [["fit","自适应","M3 3l6 6m0-5v5H4m17-6l-6 6m0-5v5h5M3 21l6-6m-5 0h5v5m12 1l-6-6m0 5v-5h5"],["max","最大化","M8 3H3v5m13-5h5v5M3 16v5h5m13-5v5h-5"]]){
+        const control=button("",()=>{b.sizeMode=mode;b.collapsed=false;boardActivate(b.id);fitSize(mode);changed();redraw();},"content-window-icon");
+        control.innerHTML='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="'+path+'"/></svg>';
+        control.title=label;control.setAttribute("aria-label",label);controls.append(control);
+      }
+      const close=button("×",()=>{const d=el("dialog",{class:"module-delete-dialog"},[el("h2",{text:"删除这个内容模块？"})]);d.append(button("取消",()=>d.close()),button("确认",()=>{d.close();removeKnowledgeItem(b.id);redraw();}));d.onclose=()=>d.remove();document.body.append(d);d.showModal();},"content-window-icon");close.title="删除内容模块";close.setAttribute("aria-label",close.title);controls.append(close);head.append(controls);
+    }
     head.tabIndex=0;head.setAttribute("aria-label","拖动组件标题栏；双击名称修改");
     attachDrag(head, false);
   } else head.append(el("span", { text: blockTitle(b) }));
@@ -512,6 +521,17 @@ function boardContent(b, list, owner) {
       ),
     );
   section.append(body);
+  function fitSize(mode){
+    const vp=document.getElementById("block-"+owner.id)?.querySelector(".knowledge-board-scroll"),v=boardView(owner.id),scale=v.scale||1;
+    const width=(vp?.clientWidth||1000)/scale,height=(vp?.clientHeight||650)/scale;
+    if(mode==="max"){layout.x=(vp?.scrollLeft||0)/scale+12;layout.y=(vp?.scrollTop||0)/scale+12;layout.width=Math.max(280,width-24);layout.height=Math.max(240,height-24);}
+    else{layout.width=Math.max(280,Math.min(1050,width*.82,width-48));apply();const measured=[...body.children].reduce((sum,n)=>sum+(n.hidden?0:n.offsetHeight||0),0);layout.height=b.type==="rhythm"?Math.max(220,measured?measured+68:200+36*Math.max(1,b.visible?.length||3)):Math.min(720,Math.max(400,height*.82));}
+    apply();boardEnsure(owner);
+  }
+  if(pageEditing&&!b.collapsed&&["midi","rhythm"].includes(b.type)){
+    if(!b.sizeMode)b.sizeMode="fit";
+    requestAnimationFrame(()=>{if(section.isConnected&&b.sizeMode!=="manual")fitSize(b.sizeMode);});
+  }
   if (editing && !b.collapsed) {
     const resize = button("◢", () => {}, "content-resize-handle");
     resize.setAttribute("aria-label", "调整内容块大小");
@@ -547,6 +567,7 @@ function boardContent(b, list, owner) {
         dy =
           (e.clientY - drag.y + (drag.viewport?.scrollTop || 0) - drag.scrollY)/boardView(owner.id).scale;
       if (resizing) {
+        b.sizeMode="manual";
         layout.width = clamp(
           drag.start.width + dx,
           b.type === "rhythm" ? 620 : b.type === "midi" ? 720 : 240,
@@ -715,9 +736,9 @@ function renderBoard(b, list) {
     dock=el("aside",{class:"board-module-dock","aria-label":"内容缩略图栏"});
     const dockHead=el("div",{class:"board-module-dock-head"});
     const grip=button("⠿",()=>{},"board-dock-drag-grip");grip.setAttribute("aria-label","上下拖动缩略图栏");grip.title="上下拖动缩略图栏";
-    let drag=null;dock.style.top=(Number(b.dockY)||0)+"px";
-    grip.onpointerdown=e=>{if(e.button!==0)return;e.preventDefault();e.stopPropagation();drag={id:e.pointerId,y:e.clientY,top:Number(b.dockY)||0};grip.setPointerCapture?.(e.pointerId);};
-    grip.onpointermove=e=>{if(!drag)return;e.preventDefault();const h=section.querySelector(".knowledge-board-scroll")?.clientHeight||500;b.dockY=Math.max(0,Math.min(h-56,drag.top+e.clientY-drag.y));dock.style.top=b.dockY+"px";};
+    let drag=null;if(Number.isFinite(b.dockY))dock.style.top=b.dockY+"px";else{dock.style.top="auto";dock.style.bottom="0px";}
+    grip.onpointerdown=e=>{if(e.button!==0)return;e.preventDefault();e.stopPropagation();const h=section.querySelector(".knowledge-board-scroll")?.clientHeight||500;drag={id:e.pointerId,y:e.clientY,top:Number.isFinite(b.dockY)?b.dockY:Math.max(0,h-56)};grip.setPointerCapture?.(e.pointerId);};
+    grip.onpointermove=e=>{if(!drag)return;e.preventDefault();const h=section.querySelector(".knowledge-board-scroll")?.clientHeight||500;b.dockY=Math.max(0,Math.min(h-56,drag.top+e.clientY-drag.y));dock.style.bottom="auto";dock.style.top=b.dockY+"px";};
     grip.onpointerup=e=>{if(!drag)return;drag=null;grip.releasePointerCapture?.(e.pointerId);changed();};grip.onpointercancel=()=>{drag=null;};
     dockHead.append(grip);
     dock.append(dockHead);

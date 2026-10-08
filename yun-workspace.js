@@ -25,9 +25,9 @@
     const board=boardElement(id),title=board?.querySelector(".knowledge-board-title");
     if(title){const tools=boardLocalTools(n.object,n.list);tools.style.top="";
       tools.querySelector(".board-inbox-button")?.remove();
-      if(editing){tools.querySelector(".board-practice-link")?.remove();tools.querySelector(".board-delete-button")?.remove();}
+      if(editing)tools.querySelector(".board-practice-link")?.remove();
+      else tools.querySelector(".board-add-menu")?.remove();
       // In browsing mode the add control enters editing before adding content.
-      if(!editing){const summary=tools.querySelector("summary");summary.onclick=e=>{e.preventDefault();e.stopPropagation();beginEdit(n);};}
       title.append(tools);
       tools.querySelector(".board-inbox-button")?.setAttribute("aria-expanded",String(!!document.querySelector(".yun-inbox.open")));
     }

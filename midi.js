@@ -134,12 +134,13 @@ function midiRender(card, b) {
   const bounds=b.notes.length ? [Math.min(...b.notes.map(n=>n.pitch)),Math.max(...b.notes.map(n=>n.pitch))] : [48,72];
   const signature=bounds.join(":");
   if(v.pitchSignature!==signature || !Number.isFinite(v.highPitch)){
-    v.highPitch=clamp(bounds[1]+(b.notes.length?2:0),24,127);
+    v.highPitch=clamp(bounds[1]+(b.notes.length?2:0),36,96);
     v.pitchSignature=signature;
   }
   const selected=selectedNotes.get(b.id)||new Set();selectedNotes.set(b.id,selected);
+  v.highPitch=clamp(v.highPitch,36,96);
   let drag=null, ghost=[], selectionRect=null, w=900;
-  const keyW=56,top=65,rowH=19,rows=25,h=top+rows*rowH+12;
+  const keyW=56,top=65,rows=25;let rowH=19,h=top+rows*rowH+12;
   const low=()=>v.highPitch-rows+1;
   const first=()=>v.left*steps();
   const cellW=()=>(w-keyW)/(steps()*4);
@@ -186,29 +187,29 @@ function midiRender(card, b) {
   seekHandle.setAttribute("aria-label","拖动音符播放位置");
   stage.append(canvas,line,seekHandle);
   const pitchScroll=el("div",{class:"midi-pitch-scroll",tabindex:"0","aria-label":"音符音区纵向滚动条"});
-  pitchScroll.append(el("div",{style:"height:"+(128*rowH)+"px;width:1px"}));
+  pitchScroll.append(el("div",{style:"height:"+(85*rowH)+"px;width:1px"}));
   wrap.append(stage,pitchScroll);card.append(wrap);
   const scroller=el("div",{class:"drum-time-scroll",tabindex:"0","aria-label":"音符时间轴水平滚动条"});
   const spacer=el("div",{class:"drum-time-spacer"});scroller.append(spacer);card.append(scroller);if(editable)card.append(inspector);
-  const hint=el("p",{class:"hint"});card.append(hint);
+  const hint=el("p",{class:"hint module-top-hint"});controls.append(hint);
   function syncScroll(){
     const plot=w-keyW;scroller.style.marginLeft=keyW+"px";scroller.style.width=plot+"px";
     spacer.style.width=plot*(1+maxLeft()/4)+"px";
     const left=v.left/4*plot;if(Math.abs(scroller.scrollLeft-left)>.5)scroller.scrollLeft=left;
-    const pitchOffset=(127-v.highPitch)*rowH;if(Math.abs(pitchScroll.scrollTop-pitchOffset)>.5)pitchScroll.scrollTop=pitchOffset;
+    const pitchOffset=(96-v.highPitch)*rowH;if(Math.abs(pitchScroll.scrollTop-pitchOffset)>.5)pitchScroll.scrollTop=pitchOffset;
   }
-  pitchScroll.onscroll=()=>{v.highPitch=clamp(127-Math.round(pitchScroll.scrollTop/rowH),24,127);paint();};
+  pitchScroll.onscroll=()=>{v.highPitch=clamp(96-Math.round(pitchScroll.scrollTop/rowH),36,96);paint();};
   pitchScroll.onkeydown=e=>{
     if(!["ArrowDown","ArrowUp","Home","End"].includes(e.key))return;e.preventDefault();
-    v.highPitch=e.key==="Home"?127:e.key==="End"?24:clamp(v.highPitch+(e.key==="ArrowDown"?-1:1),24,127);syncScroll();paint();
+    v.highPitch=e.key==="Home"?96:e.key==="End"?36:clamp(v.highPitch+(e.key==="ArrowDown"?-1:1),36,96);syncScroll();paint();
   };
-  wrap.onwheel=e=>{if(e.shiftKey)return;e.preventDefault();v.highPitch=clamp(v.highPitch-Math.sign(e.deltaY)*3,24,127);syncScroll();paint();};
+  wrap.onwheel=e=>{if(e.shiftKey)return;e.preventDefault();v.highPitch=clamp(v.highPitch-Math.sign(e.deltaY)*3,36,96);syncScroll();paint();};
   scroller.onscroll=()=>{v.left=clamp(scroller.scrollLeft/(w-keyW)*4,0,maxLeft());paint();};
   scroller.onkeydown=e=>{
     if(!["ArrowLeft","ArrowRight","Home","End"].includes(e.key))return;e.preventDefault();
     v.left=e.key==="Home"?0:e.key==="End"?maxLeft():clamp(v.left+(e.key==="ArrowRight"?1:-1),0,maxLeft());syncScroll();paint();
   };
-  function coords(e){const rect=canvas.getBoundingClientRect();const x=(e.clientX-rect.left)*w/(rect.width||w),y=(e.clientY-rect.top)*h/(rect.height||h);return{x,y,step:first()+(x-keyW)/cellW(),pitch:clamp(v.highPitch-Math.floor((y-top)/rowH),0,127)};}
+  function coords(e){const rect=canvas.getBoundingClientRect();const x=(e.clientX-rect.left)*w/(rect.width||w),y=(e.clientY-rect.top)*h/(rect.height||h);return{x,y,step:first()+(x-keyW)/cellW(),pitch:clamp(v.highPitch-Math.floor((y-top)/rowH),12,96)};}
   function noteRect(n){return{x:keyW+(n.start-first())*cellW(),y:top+(v.highPitch-n.pitch)*rowH+2,width:n.duration*cellW(),height:rowH-4};}
   function hit(c){return [...b.notes].reverse().find(n=>{const r=noteRect(n);return c.x>=r.x&&c.x<=r.x+r.width&&c.y>=r.y&&c.y<=r.y+r.height;});}
   function showPosition(position,follow=true){
@@ -309,10 +310,13 @@ function midiRender(card, b) {
   seekHandle.onpointermove=e=>canvas.onpointermove(e);
   seekHandle.onpointerup=e=>canvas.onpointerup(e);
   seekHandle.onkeydown=e=>{if(!["ArrowLeft","ArrowRight"].includes(e.key))return;e.preventDefault();stop();v.start=clamp(v.cursor+(e.key==="ArrowRight"?b.snap:-b.snap),0,total()-b.snap);v.cursor=v.start;changed();paint();};
-  function resize(){w=Math.max(260,Math.round(wrap.clientWidth-20)||900);const ratio=window.devicePixelRatio||1;stage.style.width=w+"px";canvas.width=Math.round(w*ratio);canvas.height=Math.round(h*ratio);canvas.style.width=w+"px";canvas.style.height=h+"px";canvas.getContext("2d")?.setTransform(ratio,0,0,ratio,0,0);syncScroll();paint();}
+  function resize(){w=Math.max(260,Math.round(wrap.clientWidth-20)||900);
+    if(card.clientHeight&&["fit","max"].includes(b.sizeMode)){const tools=[...card.children].filter(n=>n!==wrap&&n!==scroller).reduce((sum,n)=>sum+(n.hidden?0:n.offsetHeight||0),0);rowH=Math.max(10,(card.clientHeight-tools-48-top-12)/rows);h=top+rows*rowH+12;pitchScroll.firstElementChild.style.height=(85*rowH)+"px";}
+    pitchScroll.style.height=(rows*rowH)+"px";
+    const ratio=window.devicePixelRatio||1;stage.style.width=w+"px";canvas.width=Math.round(w*ratio);canvas.height=Math.round(h*ratio);canvas.style.width=w+"px";canvas.style.height=h+"px";canvas.getContext("2d")?.setTransform(ratio,0,0,ratio,0,0);syncScroll();paint();}
   selectionControls();resize();
   if(typeof ResizeObserver!=="undefined"){
-    const observer=new ResizeObserver(resize);observer.observe(wrap);
+    const observer=new ResizeObserver(resize);observer.observe(wrap);observer.observe(card);
     const cleanup=new MutationObserver(()=>{if(!canvas.isConnected){observer.disconnect();cleanup.disconnect();}});cleanup.observe($("blocks"),{childList:true,subtree:true});
   }
 }

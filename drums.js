@@ -315,8 +315,8 @@ rhythm = function (card, b) {
   const spacer = el("div", { class: "drum-time-spacer" });
   scroller.append(spacer);
   card.append(scroller);
-  const hint = el("p", { class: "hint" });
-  card.append(hint);
+  const hint = el("p", { class: "hint module-top-hint" });
+  controls.append(hint);
   const labelW = 154,
     top = 62,
     rowH = 36,

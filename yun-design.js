@@ -225,7 +225,7 @@ const yunPractice=archiveRenderPractice;archiveRenderPractice=function(){yunPrac
     if(e.isComposing||e.altKey)return;
     const key=e.key.toLowerCase();if(!(e.ctrlKey||e.metaKey)||!["z","y"].includes(key))return;
     const target=e.target;
-    if(/^(INPUT|TEXTAREA|SELECT)$/.test(target?.tagName)||document.querySelector("dialog[open]"))return;
+    if(/^(INPUT|TEXTAREA|SELECT)$/.test(target?.tagName)||target?.closest?.('[contenteditable="true"]')||document.querySelector("dialog[open]"))return;
     e.preventDefault();e.stopImmediatePropagation?.();
     if(key==="y"||e.shiftKey)restoreEdit(edits.redo,edits.undo);else restoreEdit(edits.undo,edits.redo);
   },true);

@@ -857,6 +857,8 @@ media = function (card, b) {
       }
     }
     file.onchange = (e) => load(e.target.files[0]);
+    card.ondragover=e=>{if(Array.from(e.dataTransfer?.types||[]).includes("Files"))e.preventDefault();};
+    card.ondrop=e=>{const f=e.dataTransfer?.files?.[0];if(!f)return;e.preventDefault();e.stopPropagation();load(f);};
     drop.ondragover = (e) => {
       e.preventDefault();
       drop.classList.add("drag-over");
@@ -867,7 +869,7 @@ media = function (card, b) {
       e.stopPropagation();
       load(e.dataTransfer.files[0]);
     };
-    card.append(
+    if(!b.src)card.append(
       drop,
       el("input", {
         value: b.src.startsWith("asset:") ? "" : b.src,
@@ -877,17 +879,12 @@ media = function (card, b) {
           if (e.target.value && !safeURL(e.target.value, b.type))
             return status("链接无效。");
           b.src = e.target.value;
+          delete b.assetId;delete b.assetName;
           redraw();
         },
       }),
     );
-    if (b.src)
-      card.append(
-        button("移除素材", () => {
-          b.src = "";
-          redraw();
-        }),
-      );
+    if(b.src){const remove=button("移除素材",()=>{b.src="";delete b.assetId;delete b.assetName;redraw();},"media-remove");card.append(remove);}
   }
   if (b.src) {
     const node = el(

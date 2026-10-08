@@ -191,14 +191,22 @@ function renderRichText(body,b){
   let savedRange=null, undoStack=[],redoStack=[];
   const snapshot=()=>({html:sanitizeRichText(editor.innerHTML),style:clone(safeTextStyle(b.textStyle))});
   let previous=snapshot();
-  function rememberRange(){const selection=window.getSelection();if(selection.rangeCount && editor.contains(selection.anchorNode))savedRange=selection.getRangeAt(0).cloneRange();}
-  function restoreRange(){editor.focus({preventScroll:true});if(savedRange){const selection=window.getSelection();selection.removeAllRanges();selection.addRange(savedRange);}}
+  function rememberRange(){const selection=window.getSelection();if(selection?.rangeCount && editor.contains(selection.anchorNode)&&editor.contains(selection.focusNode))savedRange=selection.getRangeAt(0).cloneRange();}
+  function restoreRange(){boardActivate(b.id);editor.contentEditable="true";editor.focus({preventScroll:true});if(savedRange&&editor.contains(savedRange.commonAncestorContainer)){const selection=window.getSelection();selection.removeAllRanges();selection.addRange(savedRange);}}
   function persist(history=true){
     const next=snapshot();
     if(history&&JSON.stringify(next)!==JSON.stringify(previous)){undoStack.push(previous);if(undoStack.length>100)undoStack.shift();redoStack=[];}
     previous=next;b.richText=next.html;b.content=editor.innerText ?? editor.textContent;b.textStyle=next.style;changed();
   }
-  function command(name,value){restoreRange();document.execCommand(name,false,value);rememberRange();persist();}
+  function command(name,value){
+    restoreRange();const selection=window.getSelection(),range=selection?.rangeCount?selection.getRangeAt(0):null;
+    if(range&&!range.collapsed&&["fontSize","fontName"].includes(name)){
+      const key=name==="fontSize"?"font-size":"font-family",span=document.createElement("span"),fragment=range.extractContents();
+      fragment.querySelectorAll?.("*").forEach(node=>{node.style.removeProperty(key);if(name==="fontSize")node.removeAttribute("size");else node.removeAttribute("face");});
+      span.style.setProperty(key,name==="fontSize"?TEXT_SIZES[value]:value);span.append(fragment);range.insertNode(span);range.selectNodeContents(span);selection.removeAllRanges();selection.addRange(range);
+    }else document.execCommand(name,false,value);
+    rememberRange();persist();
+  }
   function action(label,name,value){const control=button(label,()=>command(name,value));control.onpointerdown=e=>e.preventDefault();return control;}
   toolbar.append(choice("字体","system-ui",TEXT_FONTS,font=>command("fontName",font)),choice("字号",3,Object.entries(TEXT_SIZES).map(([key,label])=>[key,label.replace("px","")]),size=>command("fontSize",size)),action("加粗","bold"),action("斜体","italic"),action("下划线","underline"));
   for(const [label,name,value] of [["左对齐","justifyLeft"],["居中","justifyCenter"],["右对齐","justifyRight"],["编号","insertOrderedList"],["项目符号","insertUnorderedList"]])toolbar.append(action(label,name,value));
@@ -212,6 +220,9 @@ function renderRichText(body,b){
   toolbar.append(button("撤销",()=>history(undoStack,redoStack)),button("重做",()=>history(redoStack,undoStack)),button("清除格式",()=>{
     restoreRange();document.execCommand("removeFormat");b.textStyle={};editor.style.lineHeight="1.8";editor.style.setProperty("--paragraph-gap","8px");rememberRange();persist();
   }));
+  toolbar.addEventListener("pointerdown",rememberRange,true);
+  toolbar.addEventListener("mousedown",e=>{rememberRange();if(e.target.closest?.("button"))e.preventDefault();},true);
+  editor.onkeydown=e=>{if((e.ctrlKey||e.metaKey)&&!e.altKey&&["z","y"].includes(e.key.toLowerCase())){e.preventDefault();e.stopPropagation();if(e.key.toLowerCase()==="y"||e.shiftKey)history(redoStack,undoStack);else history(undoStack,redoStack);}};
   editor.oninput=()=>{rememberRange();persist();};editor.onkeyup=rememberRange;editor.onmouseup=rememberRange;
   editor.onpaste=e=>{
     e.preventDefault();restoreRange();const html=e.clipboardData?.getData("text/html");
