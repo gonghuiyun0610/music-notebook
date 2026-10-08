@@ -238,12 +238,14 @@ const yunPractice=archiveRenderPractice;archiveRenderPractice=function(){yunPrac
 
 /* V22: distinguish blocks, move directories, context deletion and shallow 3D tree. */
 (() => {
-  const ROOT="knowledge:root", protectedIds=new Set(["knowledge","practice","instrument","works",ROOT]);
+  const ROOT="knowledge:root", UNCLASSIFIED="folder:yun-unclassified", protectedIds=new Set(["knowledge","practice","instrument","works",ROOT,UNCLASSIFIED,"yun-unclassified"]);
   let dragKey=null,contextMenu=null;
   const kindOf=key=>key.slice(0,key.indexOf(":")),idOf=key=>key.slice(key.indexOf(":")+1);
   const selectedKey=()=>Archive.selection?`${Archive.selection.kind}:${Archive.selection.id}`:ROOT;
   const isColumn=n=>n&&n.kind!=="point";
   function model(){
+    data.sidebarFolders ||= [];
+    if(!data.sidebarFolders.some(f=>f.id==="yun-unclassified"))data.sidebarFolders.unshift({id:"yun-unclassified",title:"未归类",parent:ROOT,sidebarOrder:-1});
     const nodes=[{key:ROOT,id:"root",kind:"root",title:"知识记录",parent:null,object:null}];
     const add=(kind,o,parent,list,p)=>nodes.push({key:`${kind}:${o.id}`,id:o.id,kind,title:kind==="point"?blockTitle(o):o.title,parent:o.sidebarParent||parent,object:o,list,p});
     for(const c of data.courses){if(!c.sidebarHidden)add("course",c,ROOT,data.courses);for(const ch of c.chapters)if(!ch.sidebarHidden)add("chapter",ch,`course:${c.id}`,c.chapters);}
@@ -291,8 +293,16 @@ const yunPractice=archiveRenderPractice;archiveRenderPractice=function(){yunPrac
     if(protectedIds.has(id)||protectedIds.has(`${kind}:${id}`))return;
     if(!["course","chapter","lesson","standalone","folder","point"].includes(kind))return previousDelete(kind,id);
     const nodes=model(),n=nodes.find(n=>n.key===`${kind}:${id}`);if(!n)return;
-    archiveConfirm("删除「"+n.title+"」？","其中的子目录、知识块和内容将一起删除，可使用撤销恢复。",()=>{
+    archiveConfirm("删除「"+n.title+"」？",n.kind==="point"?"知识块及其中的内容将删除，可使用撤销恢复。":"栏目及子栏目将删除，其中的知识块会保留并移入未归类。",()=>{
       const keys=descendants(n.key),removedIds=new Set([...keys].map(idOf));stop();
+      if(n.kind!=="point"){
+        const preserved=nodes.filter(x=>x.kind==="point"&&keys.has(x.key));
+        if(preserved.length){const destination=pageFor(model().find(x=>x.key===UNCLASSIFIED)),nested=new Set();
+          preserved.forEach(x=>walk(x.object.children||[],b=>nested.add(b.id)));
+          for(const x of preserved){if(nested.has(x.id))continue;const i=x.list.indexOf(x.object);if(i>=0)x.list.splice(i,1);destination.blocks.push(x.object);}
+          for(const x of preserved){if(!nodes.some(p=>p.key===x.parent&&p.kind==="point"))x.object.sidebarParent=UNCLASSIFIED;keys.delete(x.key);removedIds.delete(x.id);}
+        }
+      }
       data.sidebarFolders=(data.sidebarFolders||[]).filter(f=>!keys.has(`folder:${f.id}`));
       data.pages=data.pages.filter(p=>!keys.has(`lesson:${p.id}`)&&!keys.has(`standalone:${p.id}`));
       // Preserve hidden legacy metadata carriers for chapters/pages moved elsewhere.
@@ -316,7 +326,7 @@ const yunPractice=archiveRenderPractice;archiveRenderPractice=function(){yunPrac
   document.addEventListener("click",e=>{if(contextMenu&&!contextMenu.contains(e.target))closeContext();});document.addEventListener("keydown",e=>{if(e.key==="Escape")closeContext();});
   const pointIcon=()=>{const n=el("span",{class:"yun-icon yun-knowledge-icon","aria-hidden":"true"});n.innerHTML='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="5" y="3" width="14" height="18" rx="3"/><path d="M9 8h6M9 12h6M9 16h3"/></svg>';return n;};
   function openNode(n){if(n.key===ROOT){Archive.selection=null;archiveNavigate("directory");return;}
-    Archive.selection={kind:n.kind,id:n.id};if(n.kind==="point")locate(n.p,n.object);else if(["lesson","standalone"].includes(n.kind)){current=n.id;archiveNavigate("knowledge");}else archiveDirectoryOverview(n.kind,n.id);
+    Archive.selection={kind:n.kind,id:n.id};if(n.kind==="point")locate(n.p,n.object);else archiveDirectoryOverview(n.kind,n.id);
   }
   function wireDrop(row,target){
     row.ondragover=e=>{if(!dragKey)return;const source=model().find(n=>n.key===dragKey);const rect=row.getBoundingClientRect(),edge=e.clientY<rect.top+rect.height*.25;
@@ -335,12 +345,27 @@ const yunPractice=archiveRenderPractice;archiveRenderPractice=function(){yunPrac
       return children.map(n=>{
         const box=yunTree(n.title,n.kind,n.id,n.list,v=>{if(n.kind==="point")n.object.title=v;else n.object.title=v;},()=>openNode(n),nodes.some(x=>x.parent===n.key)?()=>branch(n.key):null);
         const row=box.querySelector(".yun-tree-row");row.dataset.nodeKey=n.key;
+        if(n.key===UNCLASSIFIED){row.draggable=false;}
         // The leading folder symbol belongs only to columns.
         const glyph=[...row.children].find(c=>c.classList.contains("yun-icon"));if(glyph){glyph.replaceWith(n.kind==="point"?pointIcon():yunIcon("folder"));}
-        row.oncontextmenu=e=>context(e,n);row.draggable=true;
-        row.ondragstart=e=>{if(e.target.closest?.("input")){e.preventDefault();return;}dragKey=n.key;row.classList.add("dragging");e.dataTransfer.effectAllowed="move";e.dataTransfer.setData("application/x-yun-directory",n.key);e.dataTransfer.setData("text/plain",n.key);e.stopPropagation();};
+        row.oncontextmenu=e=>{if(protectedIds.has(n.key)){e.preventDefault();return;}context(e,n);};row.draggable=!protectedIds.has(n.key);
+        row.ondragstart=e=>{if(protectedIds.has(n.key)||e.target.closest?.("input")){e.preventDefault();return;}dragKey=n.key;row.classList.add("dragging");e.dataTransfer.effectAllowed="move";e.dataTransfer.setData("application/x-yun-directory",n.key);e.dataTransfer.setData("text/plain",n.key);e.stopPropagation();};
         row.ondragend=()=>{dragKey=null;row.classList.remove("dragging");document.querySelectorAll(".yun-drop-target").forEach(x=>x.classList.remove("yun-drop-target"));};
         const grip=row.querySelector(".yun-grip");if(grip)grip.ondragstart=row.ondragstart;
+        if(protectedIds.has(n.key)){row.querySelector(".yun-minus")?.remove();grip?.remove();}
+        if(isColumn(n)){
+          const name=row.querySelector(".yun-tree-link");
+          let openTimer;
+          const contextHandler=row.oncontextmenu;row.oncontextmenu=e=>{clearTimeout(openTimer);contextHandler(e);};
+          if(name){name.onclick=e=>{e.stopPropagation();clearTimeout(openTimer);openTimer=setTimeout(()=>openNode(n),280);};
+          name.ondblclick=e=>{e.preventDefault();e.stopPropagation();clearTimeout(openTimer);
+            const input=archiveInput(n.title);input.className="yun-sidebar-rename";input.setAttribute("aria-label","修改栏目名称");name.replaceWith(input);row.draggable=false;
+            let done=false;const finish=save=>{if(done)return;done=true;const title=input.value.trim();if(save&&title&&title!==n.title){n.object.title=title;changed();}nav();};
+            input.onclick=e=>e.stopPropagation();input.ondblclick=e=>e.stopPropagation();input.onblur=()=>finish(true);
+            input.onkeydown=e=>{if(e.key==="Enter"){e.preventDefault();finish(true);}if(e.key==="Escape"){e.preventDefault();finish(false);}};input.focus();input.select?.();
+          };
+          }
+        }
         wireDrop(row,n);return box;
       });
     }return branch(ROOT);
@@ -360,10 +385,18 @@ const yunPractice=archiveRenderPractice;archiveRenderPractice=function(){yunPrac
     visit(nodes[0],0);for(const n of nodes)if(!seen.has(n.key))visit(n,1);
     const center=(Math.max(1,leaf)-1)*115/2;return [...assigned.values()].map(n=>({...n,x:n.x-center,y:n.y-105}));
   }
-  archiveRenderDirectory=function(){renderGraph($("blocks"));};
+  let showingColumnBlocks=false;
+  archiveRenderDirectory=function(){
+    const selected=selectedKey(),direct=model().filter(n=>n.kind==="point"&&n.parent===selected);
+    showingColumnBlocks=direct.length>0;
+    if(!direct.length){renderGraph($("blocks"));return;}
+    editing=false;const root=$("blocks");root.classList.add("yun-column-blocks");
+    direct.forEach(n=>root.append(renderBlock(n.object,n.list)));
+    $("edit").hidden=false;$("edit").textContent="编辑知识块";
+  };
   function renderGraph(root){
     const nodes=model(),points=positions(nodes),map=new Map(nodes.map(n=>[n.key,n]));
-    const panel=el("section",{class:"yun-knowledge-graph"}),head=el("div",{class:"archive-section-head"},[el("h2",{text:"知识记录"}),el("span",{class:"muted",text:`${nodes.filter(n=>n.kind==="point").length} 个知识块 · 拖动旋转 · 滚轮缩放`})]);
+    const panel=el("section",{class:"yun-knowledge-graph"}),head=el("div",{class:"archive-section-head"},[el("span",{class:"muted",text:`${nodes.filter(n=>n.kind==="point").length} 个知识块 · 拖动旋转 · 滚轮缩放`})]);
     const viewport=el("div",{class:"yun-knowledge-viewport"}),canvas=el("canvas",{role:"img","aria-label":"3D知识目录树，拖动旋转，点击节点打开"});viewport.append(canvas);
     const picker=archiveSelect([["","选择栏目或知识块"],...nodes.slice(1).map(n=>[n.key,(n.kind==="point"?"知识块 · ":"栏目 · ")+n.title])],"");picker.onchange=()=>{const n=map.get(picker.value);if(n)openNode(n);};
     const controls=el("div",{class:"archive-actions"},[picker,button("正面",()=>{ay=0;ax=.12;zoom=1;draw();}),button("＋",()=>{zoom=Math.min(3,zoom*1.2);draw();}),button("－",()=>{zoom=Math.max(.2,zoom/1.2);draw();})]);
@@ -378,7 +411,7 @@ const yunPractice=archiveRenderPractice;archiveRenderPractice=function(){yunPrac
         g.fillRect(p.px-s*1.3,p.py-s,s*2.6,s*2);g.strokeStyle=p.kind==="point"?"#6b8faa":"#9b8267";g.lineWidth=1.5;g.beginPath();g.moveTo(p.px-s*1.3,p.py-s);g.lineTo(p.px+s*1.3,p.py-s);g.lineTo(p.px+s*1.3,p.py+s);g.lineTo(p.px-s*1.3,p.py+s);g.lineTo(p.px-s*1.3,p.py-s);g.stroke();
         if(p.kind==="point"){g.beginPath();g.moveTo(p.px-s*.65,p.py-s*.35);g.lineTo(p.px+s*.65,p.py-s*.35);g.moveTo(p.px-s*.65,p.py+s*.25);g.lineTo(p.px+s*.35,p.py+s*.25);g.stroke();}
         else{g.fillStyle="#c9b293";g.fillRect(p.px-s*1.3,p.py-s*1.3,s*1.1,s*.3);}
-        if(nodes.length<80||p.key===selected||p.key===ROOT){g.font="12px system-ui";g.textAlign="center";g.fillStyle="#5d6268";const label=p.title.length>15?p.title.slice(0,14)+"…":p.title;g.fillText(label,p.px,p.py+s+18);}
+        if(p.key!==ROOT&&(nodes.length<80||p.key===selected)){g.font="12px system-ui";g.textAlign="center";g.fillStyle="#5d6268";const label=p.title.length>15?p.title.slice(0,14)+"…":p.title;g.fillText(label,p.px,p.py+s+18);}
       });
     }
     canvas.style.touchAction="none";canvas.onpointerdown=e=>{drag={x:e.clientX,y:e.clientY,startX:e.clientX,startY:e.clientY,moved:false};canvas.setPointerCapture?.(e.pointerId);};
@@ -388,12 +421,21 @@ const yunPractice=archiveRenderPractice;archiveRenderPractice=function(){yunPrac
     const observer=new ResizeObserver(draw);observer.observe(viewport);draw();Archive.graphDispose=()=>{observer.disconnect();drag=null;};
   }
   const previousRender=render;
-  render=function(){closeContext();previousRender();if(Archive.view==="directory"){$("title").textContent="知识记录";$("crumb").textContent="主页 / 知识记录";
+  render=function(){closeContext();showingColumnBlocks=false;$("blocks").classList.remove("yun-column-blocks");previousRender();if(Archive.view==="directory"){$("title").replaceChildren();$("meta").replaceChildren();$("crumb").textContent="";
       // The legacy render wrapper may append standalone cards; graph already includes them.
       for(const panel of $("blocks").querySelectorAll(".archive-panel"))if(panel.querySelector("h2")?.textContent==="独立词条")panel.remove();
     }
+    document.body.classList.toggle("yun-content-edit",Archive.view==="knowledge"&&editing);
+    document.body.classList.toggle("yun-node-page",Archive.view==="directory");
+    if(Archive.view==="knowledge"){$("title").replaceChildren();$("meta").replaceChildren();$("crumb").textContent="";}
+    const header=document.querySelector("main header");if(header&&!$("yun-content-back")){const back=button("←",()=>window.YunSidebar.back(),"yun-content-back");back.id="yun-content-back";back.title="返回上一界面";back.setAttribute("aria-label",back.title);header.prepend(back);}
     for(const span of document.querySelectorAll(".yun-map-hub span"))if(span.textContent==="知识百科")span.textContent="知识记录";
   };
   Object.assign(window.YunSidebar,{model,move,positions});
+  const oldEdit=$("edit").onclick;
+  $("edit").onclick=()=>{if(Archive.view==="directory"&&showingColumnBlocks){const first=model().find(n=>n.kind==="point"&&n.parent===selectedKey());
+      if(first){current=first.p.id;Archive.view="knowledge";editing=true;render();return;}}
+    oldEdit();
+  };
   const previousPopup=yunPopup;yunPopup=function(anchor,title,items){return previousPopup(anchor,title.replace(/知识百科/g,"知识记录"),items);};
 })();

@@ -30,3 +30,11 @@
 .yun-knowledge-viewport{height:clamp(340px,65vh,680px);overflow:hidden;border-radius:12px;background:radial-gradient(ellipse at center,#f3f6f8,#fbf8f2)}
 .yun-knowledge-viewport canvas{display:block;cursor:grab}.yun-knowledge-viewport canvas:active{cursor:grabbing}
 @media(max-width:640px){.yun-knowledge-graph{padding:10px}.yun-knowledge-viewport{height:55vh}.yun-knowledge-graph .archive-actions select{width:100%;flex-basis:100%}}
+
+/* V23: content navigation, title-free content pages and clear editing canvas. */
+.yun-content-back{flex:none;border:0;background:transparent;font-size:22px;padding:4px 8px;color:#655951}
+.yun-node-page .page-head,.yun-knowledge-top .page-head{display:none}
+.yun-content-edit .knowledge-board,.yun-content-edit .knowledge-board-scroll,.yun-content-edit .knowledge-board-surface{background:transparent!important;background-image:none!important;box-shadow:none!important;border-color:transparent!important}
+.yun-content-edit.board-overview::before{background:transparent}
+.yun-sidebar-rename{width:100%;min-width:0;border:0;border-radius:6px;background:#fff9f0;padding:5px;color:inherit;font:inherit}
+.yun-column-blocks .knowledge-board{margin-top:6px}
