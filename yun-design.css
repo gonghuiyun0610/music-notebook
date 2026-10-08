@@ -38,3 +38,8 @@
 .yun-content-edit.board-overview::before{background:transparent}
 .yun-sidebar-rename{width:100%;min-width:0;border:0;border-radius:6px;background:#fff9f0;padding:5px;color:inherit;font:inherit}
 .yun-column-blocks .knowledge-board{margin-top:6px}
+
+/* V24: named pastel circles and no graph toolbar. */
+.yun-knowledge-graph{background:transparent;padding:0;box-shadow:none}
+.yun-knowledge-viewport{background:transparent;border-radius:0;height:clamp(360px,72vh,760px)}
+.yun-content-back{font-size:14px;display:inline-flex;align-items:center;gap:6px;white-space:nowrap}
