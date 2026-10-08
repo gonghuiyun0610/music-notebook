@@ -7,7 +7,6 @@
   const state = {
     mode: localStorage.getItem("yunInboxMode") || "browse",
     items: [],
-    filter: "最近收集",
     typeFilter: "全部",
     selected: new Set(),
     regexSelected: [],
@@ -54,13 +53,13 @@
         <span class="yun-inbox-note">♩</span>
         <strong>收集箱</strong>
         <div class="yun-inbox-head-actions">
+          <button class="yun-head-btn yun-refresh-btn" type="button" title="刷新收集箱（仅加入新文件）" aria-label="刷新">↻</button>
           <button class="yun-head-btn yun-collect-btn" type="button">收集</button>
           <button class="yun-head-btn yun-mode-btn" type="button"></button>
           <button class="yun-inbox-close" type="button" aria-label="收起">×</button>
         </div>
       </div>
       <div class="yun-inbox-search"><input placeholder="搜索最近收集的内容…"></div>
-      <div class="yun-inbox-tabs"></div>
       <div class="yun-edit-tools" hidden>
         <div class="yun-filter-row">
           <button class="yun-filter-chip active" data-type-filter="全部">全部</button>
@@ -100,15 +99,6 @@
       render();
     };
 
-    const tabs = box.querySelector(".yun-inbox-tabs");
-    TYPES.forEach(t => {
-      const b = document.createElement("button");
-      b.textContent = t;
-      b.dataset.type = t;
-      b.onclick = () => { state.filter = t; render(); };
-      tabs.append(b);
-    });
-
     box.querySelector(".yun-inbox-search input").oninput = e => { state.query = e.target.value.trim().toLowerCase(); render(); };
     box.querySelectorAll("[data-type-filter]").forEach(b => b.onclick = () => {
       state.typeFilter = b.dataset.typeFilter;
@@ -130,6 +120,7 @@
     box.querySelector(".yun-batch-sync").onclick = batchSync;
     box.querySelector(".yun-batch-delete").onclick = batchDelete;
 
+    box.querySelector(".yun-refresh-btn").onclick = refresh;
     applyMode();
     load();
   }
@@ -155,6 +146,24 @@
     } catch (e) {
       list.innerHTML = `<div class="yun-inbox-empty"><b>收集箱连接失败</b><br>请刷新页面重试。<br><small>${esc(e.message)}</small></div>`;
     }
+  }
+
+  async function refresh() {
+    const btn = document.querySelector(".yun-refresh-btn");
+    if (btn.disabled) return;
+    btn.disabled = true; btn.classList.add("working");
+    try {
+      const r = await apiFetch("/api/recent-json");
+      if (!r.ok) throw Error("HTTP " + r.status);
+      const data = await r.json();
+      const incoming = Array.isArray(data.items) ? data.items : [];
+      const ids = new Set(state.items.map(x => String(x.id)));
+      const newer = incoming.filter(x => !ids.has(String(x.id)));
+      state.items = [...newer, ...state.items];
+      render();
+      btn.title = newer.length ? `新增 ${newer.length} 项` : "没有新文件";
+    } catch(e) { alert("刷新失败：" + e.message); }
+    finally { btn.disabled=false; btn.classList.remove("working"); }
   }
 
   function allRegexLabels() {
@@ -206,12 +215,11 @@
 
   function filteredItems() {
     return state.items.filter(x => {
-      const typeOK = state.filter === "最近收集" || x.type === state.filter || (state.filter === "录音" && x.type === "音频");
       const editTypeOK = state.mode !== "edit" || state.typeFilter === "全部" || x.type === state.typeFilter || (state.typeFilter === "录音" && x.type === "音频");
       const regexOK = !state.regexSelected.length || state.regexSelected.includes(String(x.regex || ""));
       const q = state.query;
       const text = `${x.displayName || x.name || ""} ${x.name || ""} ${x.regex || ""} ${x.note || ""}`.toLowerCase();
-      return typeOK && editTypeOK && regexOK && (!q || text.includes(q));
+      return editTypeOK && regexOK && (!q || text.includes(q));
     });
   }
 
@@ -341,7 +349,6 @@
   function render() {
     const box = document.querySelector(".yun-inbox");
     if (!box) return;
-    box.querySelectorAll(".yun-inbox-tabs button").forEach(b => b.classList.toggle("active", b.dataset.type === state.filter));
     box.querySelector(".yun-selected-count").textContent = `已选择 ${state.selected.size} 项`;
 
     const list = box.querySelector(".yun-inbox-list");
@@ -394,11 +401,30 @@
       }
       row.querySelector(".yun-delete").onclick = e => { e.stopPropagation(); deleteItem(x); };
 
-      if (["录音","音频"].includes(x.type) && x.media) {
-        const a=document.createElement("audio"); a.className="yun-inbox-audio"; a.src=x.media; a.controls=true; a.preload="metadata"; a.draggable=false; row.append(a);
-      } else if (x.type==="视频" && x.media) {
-        const v=document.createElement("video"); v.className="yun-inbox-video"; v.src=x.media; v.controls=true; v.playsInline=true; v.preload="metadata"; v.draggable=false;
-        v.ondblclick=()=>openPreview(x); row.append(v);
+      if (["录音","音频","视频"].includes(x.type) && x.media) {
+        const btn = document.createElement("button");
+        btn.type = "button";
+        btn.className = "yun-media-toggle";
+        btn.textContent = "▶";
+        btn.title = x.type === "视频" ? "点击展开视频" : "点击展开录音播放条";
+        btn.setAttribute("aria-label",btn.title);
+        row.querySelector(".yun-inbox-thumb").replaceChildren(btn);
+        btn.onclick = e => {
+          e.stopPropagation();
+          const old = row.querySelector(".yun-inbox-audio,.yun-inbox-video");
+          if (old) { old.pause(); old.remove(); btn.textContent="▶"; return; }
+          const media = document.createElement(x.type === "视频" ? "video" : "audio");
+          media.className = x.type === "视频" ? "yun-inbox-video" : "yun-inbox-audio";
+          media.controls = true;
+          media.preload = "none";
+          media.playsInline = true;
+          media.draggable = false;
+          media.src = x.media;
+          if (x.type === "视频") media.ondblclick = () => openPreview(x);
+          row.append(media);
+          btn.textContent="▾";
+          media.play().catch(() => {});
+        };
       } else if (["图片","文字"].includes(x.type)) {
         row.ondblclick = e => { if (!e.target.closest("button,input,audio,video")) openPreview(x); };
       }
