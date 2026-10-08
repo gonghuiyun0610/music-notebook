@@ -51,3 +51,186 @@ archiveRenderHome=function(){const root=$("blocks");root.append(el("p",{class:"y
 const yunLocate=locate;locate=function(p,b){Yun.expanded="knowledge";for(const id of [p.courseId,p.chapterId,p.id])if(id)viewState.set("archive-tree:"+id,true);Archive.selection={kind:"point",id:b.id};yunLocate(p,b);};
 const yunInstruments=archiveRenderInstruments;archiveRenderInstruments=function(){yunInstruments();if(Archive.instrumentTab==="plan"){const panels=$("blocks").querySelectorAll("section.archive-panel");panels.forEach(panel=>{const heading=panel.querySelector("h2")?.textContent||"";if(Yun.instrumentScope==="today"&&heading==="本周计划")panel.remove();if(Yun.instrumentScope==="week"&&heading.startsWith("今日计划"))panel.remove();});}};
 const yunPractice=archiveRenderPractice;archiveRenderPractice=function(){yunPractice();if(Archive.practiceTab==="organize"){const cols=$("blocks").querySelector(".archive-organize");const sections=cols?.children;if(sections?.length===2){sections[Yun.practiceSection==="classified"?0:1].hidden=true;cols.classList.add("yun-single-organize");}}if(Archive.practiceTab==="records"){const panel=el("section",{class:"archive-panel"},[el("h2",{text:"练习记录"})]);data.practiceSessions.slice().reverse().forEach(s=>{const node=archiveFind(s.nodeId);panel.append(el("div",{class:"archive-row"},[el("span",{text:(node?blockTitle(node.b):"已删除知识点")+" · "+archiveTime(s.endedAt)}),el("small",{text:archiveMinutes(s.seconds)+" · "+ARCHIVE_FEEDBACK[s.feedback]})]));});if(!data.practiceSessions.length)panel.append(el("p",{class:"muted",text:"练完保存后，记录会出现在这里。"}));$("blocks").append(panel);}};
+
+/* V21: arbitrary child columns, context knowledge blocks, navigation and undo. */
+(() => {
+  const ROOT = "knowledge:root";
+  const selectionKey = s => s ? `${s.kind}:${s.id}` : ROOT;
+  const folders = () => data.sidebarFolders ||= [];
+  const parentKey = () => selectionKey(Archive.selection);
+  const nodeExists = key => key === ROOT || folders().some(f => `folder:${f.id}` === key)
+    || data.courses.some(c => `course:${c.id}` === key || c.chapters.some(ch => `chapter:${ch.id}` === key))
+    || data.pages.some(p => [`lesson:${p.id}`,`standalone:${p.id}`].includes(key))
+    || archiveNodes().some(x => `point:${x.b.id}` === key);
+  function expandAncestors(key, seen=new Set()) {
+    if(seen.has(key))return; seen.add(key);
+    const id=key.slice(key.indexOf(":")+1);viewState.set("archive-tree:"+id,true);
+    const f=folders().find(f=>`folder:${f.id}`===key);
+    if(f)expandAncestors(f.parent,seen);
+    const x=archiveNodes().find(x=>`point:${x.b.id}`===key);
+    if(x?.b.sidebarParent)expandAncestors(x.b.sidebarParent,seen);
+    const p=data.pages.find(p=>[`lesson:${p.id}`,`standalone:${p.id}`].includes(key));
+    if(p){if(p.chapterId)expandAncestors(`chapter:${p.chapterId}`,seen);if(p.courseId)expandAncestors(`course:${p.courseId}`,seen);}
+    const c=data.courses.find(c=>c.chapters.some(ch=>`chapter:${ch.id}`===key));
+    if(c)expandAncestors(`course:${c.id}`,seen);
+  }
+  function createColumn(title, parent=parentKey()) {
+    if(!nodeExists(parent)){archiveNotice("请先选择有效栏目。");return null;}
+    const f={id:uid(),title,parent};folders().push(f);expandAncestors(parent);
+    Archive.selection={kind:"folder",id:f.id};Archive.view="directory";Yun.expanded="knowledge";
+    changed();render();return f;
+  }
+  function createKnowledge(title, parent=parentKey()) {
+    if(!nodeExists(parent)){archiveNotice("请先选择有效栏目。");return null;}
+    let p;
+    if(parent.startsWith("lesson:")||parent.startsWith("standalone:"))p=data.pages.find(p=>p.id===parent.slice(parent.indexOf(":")+1));
+    if(parent.startsWith("point:"))p=archiveFind(parent.slice(6))?.p;
+    if(!p){
+      p=data.pages.find(p=>p.sidebarContainer&&p.sidebarParent===parent);
+      if(!p){p={id:uid(),title:"栏目知识",category:"知识百科",kind:"knowledge",standalone:true,sidebarContainer:true,sidebarParent:parent,blocks:[]};data.pages.push(p);}
+    }
+    const b=createBlock("group");b.title=title;b.sidebarParent=parent;p.blocks.push(b);
+    current=p.id;Archive.selection={kind:"point",id:b.id};Archive.view="knowledge";Yun.expanded="knowledge";editing=true;
+    expandAncestors(parent);changed();render();
+    document.querySelector(`[data-block="${b.id}"]`)?.scrollIntoView({block:"start",behavior:"smooth"});
+    return b;
+  }
+  function addDialog(kind) {
+    const parent=parentKey(), d=archiveDialog(kind==="column"?"新增栏目":"新增知识块"),name=archiveInput("","输入名称");
+    d.append(archiveField("名称",name));
+    archiveCloseRow(d,()=>{const title=name.value.trim();if(!title){name.focus();return;}
+      d.close();kind==="column"?createColumn(title,parent):createKnowledge(title,parent);
+    },"创建");name.focus();
+  }
+  const oldAdd=yunAddMenu;
+  yunAddMenu=function(anchor){if(yunContext()!=="knowledge")return oldAdd(anchor);
+    yunPopup(anchor,"新增到当前高亮栏目",[["新增栏目","成为当前栏目的子目录",()=>addDialog("column")],["新增知识块","添加到当前栏目下",()=>addDialog("knowledge")]]);
+  };
+  // Keep old entry points consistent, without a type or destination selector.
+  archiveAddDialog=()=>addDialog("column");yunNewEntry=()=>addDialog("knowledge");
+  const oldReorder=yunReorder;
+  yunReorder=function(list,from,to){const a=list.find(x=>x.id===from),b=list.find(x=>x.id===to);
+    if(list===data.sidebarFolders&&a?.parent!==b?.parent)return false;
+    if(a?.sidebarParent!==b?.sidebarParent)return false;
+    return oldReorder(list,from,to);
+  };
+
+  const oldDelete=archiveDelete;
+  archiveDelete=function(kind,id){
+    if(kind!=="folder")return oldDelete(kind,id);
+    const f=folders().find(f=>f.id===id);if(!f)return;
+    archiveConfirm("删除「"+f.title+"」？","子栏目和其中的知识块将一并删除，可用撤销恢复。",()=>{
+      const keys=new Set([`folder:${id}`]);let grew=true;
+      while(grew){grew=false;for(const child of folders())if(keys.has(child.parent)&&!keys.has(`folder:${child.id}`)){keys.add(`folder:${child.id}`);grew=true;}
+        for(const {b}of archiveNodes())if(keys.has(b.sidebarParent)&&!keys.has(`point:${b.id}`)){keys.add(`point:${b.id}`);grew=true;}}
+      data.sidebarFolders=folders().filter(f=>!keys.has(`folder:${f.id}`));
+      const prune=list=>list.filter(b=>!keys.has(`point:${b.id}`)).map(b=>{if(b.children)b.children=prune(b.children);return b;});
+      data.pages.forEach(p=>p.blocks=prune(p.blocks));data.pages=data.pages.filter(p=>!p.sidebarContainer||p.blocks.length);
+      Archive.selection=null;Archive.view="directory";changed();render();
+    });
+  };
+  yunKnowledgeTree=function(){
+    const ancestors=new Set();
+    function children(key){
+      if(ancestors.has(key))return [];ancestors.add(key);
+      const out=[];
+      const make=(title,kind,id,list,rename,open,childKey)=>yunTree(title,kind,id,list,rename,open,()=>children(childKey));
+      if(key===ROOT){
+        for(const c of data.courses)out.push(make(c.title,"course",c.id,data.courses,v=>c.title=v,()=>archiveDirectoryOverview("course",c.id),`course:${c.id}`));
+        for(const p of data.pages.filter(p=>p.standalone&&!p.sidebarContainer))out.push(make(p.title,"standalone",p.id,data.pages,v=>p.title=v,()=>{current=p.id;archiveNavigate("knowledge");},`standalone:${p.id}`));
+      }
+      const c=data.courses.find(c=>`course:${c.id}`===key);
+      if(c)for(const ch of c.chapters)out.push(make(archiveChapterTitle(c,ch),"chapter",ch.id,c.chapters,v=>ch.title=v,()=>archiveDirectoryOverview("chapter",ch.id),`chapter:${ch.id}`));
+      if(key.startsWith("chapter:"))for(const p of data.pages.filter(p=>p.chapterId===key.slice(8)&&!p.sidebarContainer))out.push(make(p.title,"lesson",p.id,data.pages,v=>p.title=v,()=>{current=p.id;archiveNavigate("knowledge");},`lesson:${p.id}`));
+      for(const f of folders().filter(f=>f.parent===key))out.push(make(f.title,"folder",f.id,folders(),v=>f.title=v,()=>archiveDirectoryOverview("folder",f.id),`folder:${f.id}`));
+      for(const {p,b}of archiveNodes()){
+        const natural=p.standalone?`standalone:${p.id}`:`lesson:${p.id}`;
+        const belongs=b.sidebarParent||((p.blocks.includes(b))?natural:null);
+        if(belongs===key)out.push(make(blockTitle(b),"point",b.id,p.blocks,v=>b.title=v,()=>locate(p,b),`point:${b.id}`));
+      }
+      ancestors.delete(key);return out;
+    }
+    const nodes=children(ROOT);return nodes.length?nodes:[el("p",{class:"yun-empty",text:"点击＋新增栏目或知识块"})];
+  };
+  const oldDirectory=archiveRenderDirectory;
+  archiveRenderDirectory=function(){
+    if(Archive.selection?.kind!=="folder")return oldDirectory();
+    const f=folders().find(f=>f.id===Archive.selection.id);if(!f){Archive.selection=null;return oldDirectory();}
+    $("title").textContent=f.title;$("crumb").textContent="知识百科 / "+f.title;
+    const panel=el("section",{class:"archive-panel"},[el("h2",{text:f.title})]);
+    for(const child of folders().filter(x=>x.parent===`folder:${f.id}`))panel.append(button(child.title,()=>archiveDirectoryOverview("folder",child.id),"archive-list-button"));
+    for(const {p,b}of archiveNodes().filter(x=>x.b.sidebarParent===`folder:${f.id}`))panel.append(button(blockTitle(b),()=>locate(p,b),"archive-list-button"));
+    panel.append(button("＋ 新增栏目",()=>addDialog("column")),button("＋ 新增知识块",()=>addDialog("knowledge")));$("blocks").append(panel);
+  };
+
+  // Observe every committed data change; do not place assets or credentials in history.
+  const edits={undo:[],redo:[],baseline:null,replaying:false,lastInput:null,lastTime:0};
+  const snapshot=()=>JSON.stringify(data);
+  const oldChanged=changed;
+  function removeOrphanedChildren(){
+    // Old course/point delete handlers also remove their new attached descendants.
+    let removed=true;
+    while(removed){removed=false;
+      const valid=folders().filter(f=>nodeExists(f.parent));
+      if(valid.length!==folders().length){data.sidebarFolders=valid;removed=true;}
+      const prune=list=>list.filter(b=>{const keep=!b.sidebarParent||nodeExists(b.sidebarParent);if(!keep)removed=true;return keep;}).map(b=>{if(b.children)b.children=prune(b.children);return b;});
+      data.pages.forEach(p=>p.blocks=prune(p.blocks));
+    }
+    data.pages=data.pages.filter(p=>!p.sidebarContainer||p.blocks.length);
+  }
+  changed=function(){
+    if(data&&!edits.replaying){removeOrphanedChildren();const next=snapshot();
+      if(edits.baseline!==null&&edits.baseline!==next){
+        const active=document.activeElement,typing=active?.isContentEditable;
+        const coalesce=typing&&active===edits.lastInput&&Date.now()-edits.lastTime<500;
+        if(!coalesce)edits.undo.push({data:edits.baseline,current});
+        if(edits.undo.length>60)edits.undo.shift();
+        while(edits.undo.length>1&&edits.undo.reduce((n,s)=>n+s.data.length,0)>12*1024*1024)edits.undo.shift();
+        edits.redo=[];edits.lastInput=typing?active:null;edits.lastTime=Date.now();
+      }edits.baseline=next;
+    }oldChanged();
+  };
+  function restoreEdit(from,to){
+    if(!from.length)return;
+    const next=from.pop();to.push({data:snapshot(),current});edits.replaying=true;
+    try{stop();data=validate(JSON.parse(next.data));current=data.pages.some(p=>p.id===next.current)?next.current:data.pages[0]?.id||null;
+      activeBlock=null;boardActiveContent=null;Archive.undo=[];$("archive-undo")?.remove();$("delete-undo")?.remove();
+      changed();render();edits.baseline=snapshot();edits.lastInput=null;
+    }finally{edits.replaying=false;}
+  }
+  const routes={stack:[],last:null,replaying:false};
+  const route=()=>({view:Archive.view,current,selection:clone(Archive.selection),practiceTab:Archive.practiceTab,category:Archive.category,instrument:Archive.instrument,instrumentTab:Archive.instrumentTab,work:Archive.work,workType:Archive.workType,expanded:Yun.expanded,practiceSection:Yun.practiceSection,instrumentScope:Yun.instrumentScope});
+  function back(){
+    if(!routes.stack.length){status("已经是最早的界面。");return;}
+    const prior=routes.stack.pop();routes.replaying=true;
+    try{stop();const {expanded,practiceSection,instrumentScope,current:pageId,...view}=prior;Object.assign(Archive,view);Object.assign(Yun,{expanded,practiceSection,instrumentScope});current=pageId;editing=false;render();}
+    finally{routes.replaying=false;}
+  }
+  const oldRender=render;
+  render=function(){
+    if(!data)return;
+    const now=route();if(!routes.replaying&&routes.last&&JSON.stringify(now)!==JSON.stringify(routes.last)){routes.stack.push(routes.last);if(routes.stack.length>100)routes.stack.shift();}
+    oldRender();routes.last=route();
+    if(Archive.view==="directory")for(const panel of $("blocks").querySelectorAll(".archive-panel")){
+      if(panel.querySelector("h2")?.textContent!=="独立词条")continue;
+      panel.remove();const solo=data.pages.filter(p=>p.standalone&&!p.sidebarContainer);
+      if(solo.length){const clean=el("section",{class:"archive-panel"},[el("h2",{text:"独立词条"})]);solo.forEach(p=>clean.append(button(p.title,()=>{current=p.id;archiveNavigate("knowledge");},"archive-list-button")));$("blocks").append(clean);}
+    }
+    if(edits.baseline===null||edits.replaying)edits.baseline=snapshot();
+    document.body.classList.toggle("yun-knowledge-top",Archive.view==="knowledge");
+    const toolbar=$("yun-toolbar");if(toolbar&&!$("yun-back")){
+      const b=yunButton("","arrow",back,"yun-tool yun-back");b.id="yun-back";b.title="返回上一界面";b.setAttribute("aria-label",b.title);toolbar.prepend(b);
+    }
+    // Home remains a home icon. The separate back arrow never jumps home.
+  };
+  document.addEventListener("keydown",e=>{
+    if(e.isComposing||e.altKey)return;
+    const key=e.key.toLowerCase();if(!(e.ctrlKey||e.metaKey)||!["z","y"].includes(key))return;
+    const target=e.target;
+    if(/^(INPUT|TEXTAREA|SELECT)$/.test(target?.tagName)||document.querySelector("dialog[open]"))return;
+    e.preventDefault();e.stopImmediatePropagation?.();
+    if(key==="y"||e.shiftKey)restoreEdit(edits.redo,edits.undo);else restoreEdit(edits.undo,edits.redo);
+  },true);
+  // Public helpers are also used by regression tests and optional future toolbar controls.
+  window.YunSidebar={createColumn,createKnowledge,back,undo:()=>restoreEdit(edits.undo,edits.redo),redo:()=>restoreEdit(edits.redo,edits.undo)};
+})();

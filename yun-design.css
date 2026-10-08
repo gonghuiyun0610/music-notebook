@@ -6,3 +6,13 @@
 @media(prefers-reduced-motion:reduce){.yun-chevron .yun-icon{transition:none}}
 
 .yun-single-organize{grid-template-columns:1fr}.yun-home-page #blocks{overflow:hidden}
+
+/* V21: keep knowledge content near the header, without moving the home map. */
+.yun-back .yun-icon{transform:rotate(180deg)}
+.yun-knowledge-top .page-head{padding:8px 0 4px;margin:0}
+.yun-knowledge-top .page-head h1{margin:0 0 4px;font-size:25px}
+.yun-knowledge-top #meta{margin:0;font-size:12px}
+.yun-knowledge-top #blocks{margin-top:4px}
+.yun-knowledge-top .block.knowledge-board{margin-top:6px;padding-top:10px}
+.yun-knowledge-top .knowledge-board-title{margin-top:0;margin-bottom:8px}
+.yun-knowledge-top header{margin-bottom:0}
