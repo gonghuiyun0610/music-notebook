@@ -140,7 +140,9 @@ function midiRender(card, b) {
   const selected=selectedNotes.get(b.id)||new Set();selectedNotes.set(b.id,selected);
   v.highPitch=clamp(v.highPitch,36,96);
   let drag=null, ghost=[], selectionRect=null, w=900;
-  const keyW=56,top=65,rows=25;let rowH=19,h=top+rows*rowH+12;
+  const keyW=56,top=65,rows=25;
+  const readingRowH=Math.min(19,Math.max(10,((window.innerHeight||900)-260-top-12)/rows));
+  let rowH=editable?19:readingRowH,h=top+rows*rowH+12;
   const low=()=>v.highPitch-rows+1;
   const first=()=>v.left*steps();
   const cellW=()=>(w-keyW)/(steps()*4);
@@ -311,12 +313,19 @@ function midiRender(card, b) {
   seekHandle.onpointerup=e=>canvas.onpointerup(e);
   seekHandle.onkeydown=e=>{if(!["ArrowLeft","ArrowRight"].includes(e.key))return;e.preventDefault();stop();v.start=clamp(v.cursor+(e.key==="ArrowRight"?b.snap:-b.snap),0,total()-b.snap);v.cursor=v.start;changed();paint();};
   function resize(){w=Math.max(260,Math.round(wrap.clientWidth-20)||900);
-    if(card.clientHeight&&["fit","max"].includes(b.sizeMode)){const tools=[...card.children].filter(n=>n!==wrap&&n!==scroller).reduce((sum,n)=>sum+(n.hidden?0:n.offsetHeight||0),0);rowH=Math.max(10,(card.clientHeight-tools-48-top-12)/rows);h=top+rows*rowH+12;pitchScroll.firstElementChild.style.height=(85*rowH)+"px";}
+    // Reading height is intrinsic. Never feed an auto-height body back into
+    // the canvas height: its padding/controls otherwise grow on every resize.
+    if(editable&&Number.isFinite(b.layout?.height)&&["fit","max"].includes(b.sizeMode)){
+      const tools=[...card.children].filter(n=>n!==wrap&&n!==scroller).reduce((sum,n)=>sum+(n.hidden?0:n.offsetHeight||0),0);
+      const available=b.layout.height-36-28;
+      rowH=Math.max(10,Math.min(32,(available-tools-48-top-12)/rows));
+    }else rowH=editable?19:readingRowH;
+    h=top+rows*rowH+12;pitchScroll.firstElementChild.style.height=(85*rowH)+"px";
     pitchScroll.style.height=(rows*rowH)+"px";
     const ratio=window.devicePixelRatio||1;stage.style.width=w+"px";canvas.width=Math.round(w*ratio);canvas.height=Math.round(h*ratio);canvas.style.width=w+"px";canvas.style.height=h+"px";canvas.getContext("2d")?.setTransform(ratio,0,0,ratio,0,0);syncScroll();paint();}
   selectionControls();resize();
   if(typeof ResizeObserver!=="undefined"){
-    const observer=new ResizeObserver(resize);observer.observe(wrap);observer.observe(card);
+    const observer=new ResizeObserver(resize);observer.observe(wrap);if(editable)observer.observe(card);
     const cleanup=new MutationObserver(()=>{if(!canvas.isConnected){observer.disconnect();cleanup.disconnect();}});cleanup.observe($("blocks"),{childList:true,subtree:true});
   }
 }
