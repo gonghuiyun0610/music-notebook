@@ -384,7 +384,8 @@
           <div class="yun-inbox-meta">${esc(x.time||"")}${x.size?" · "+esc(x.size):""}</div>
         </div>
         <div class="yun-item-actions">
-          ${state.mode==="edit" ? `<button class="yun-icon-btn yun-sync" title="${x.dirty?"未同步":"同步到网盘"}">↻</button><button class="yun-icon-btn yun-star ${x.favorite?"active":""}" title="收藏">☆</button>` : ""}
+          ${state.mode==="edit" ? `<button class="yun-icon-btn yun-sync" title="${x.dirty?"未同步":"同步到网盘"}">↻</button>` : ""}
+          <button type="button" class="yun-icon-btn yun-star ${x.favorite?"active":""}" title="${x.favorite?"取消收藏":"收藏"}" aria-label="${x.favorite?"取消收藏":"收藏"}" aria-pressed="${!!x.favorite}">${x.favorite?"★":"☆"}</button>
           <button class="yun-icon-btn yun-delete" title="删除">×</button>
         </div>
       `;
@@ -395,12 +396,12 @@
         cb.onchange = () => { cb.checked ? state.selected.add(String(x.id)) : state.selected.delete(String(x.id)); render(); };
         displayNameEditor(row,x);
         row.querySelector(".yun-sync").onclick = e => { e.stopPropagation(); syncItem(x,e.currentTarget); };
-        row.querySelector(".yun-star").onclick = async e => {
-          e.stopPropagation(); x.favorite = !x.favorite;
-          await saveMeta(x,{favorite:x.favorite}).catch(()=>{});
-          render();
-        };
       }
+      row.querySelector(".yun-star").onclick = async e => {
+        e.stopPropagation(); x.favorite = !x.favorite;
+        await saveMeta(x,{favorite:x.favorite}).catch(()=>{});
+        render();
+      };
       row.querySelector(".yun-delete").onclick = e => { e.stopPropagation(); deleteItem(x); };
 
       if (["录音","音频","视频"].includes(x.type) && x.media) {

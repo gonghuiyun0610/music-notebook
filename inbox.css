@@ -44,3 +44,11 @@
 .yun-inbox-head,.yun-inbox-search,.yun-edit-tools,.yun-inbox-tip{flex-shrink:0}
 .yun-inbox-list{min-height:0}
 .yun-batch-row[hidden]{display:none}
+
+/* V11: plain centered icons in edit mode; favorite in both modes. */
+.yun-inbox.edit-mode .yun-icon-btn,
+.yun-inbox.edit-mode .yun-refresh-btn{border:0;background:transparent;box-shadow:none;border-radius:0;display:grid;place-items:center;padding:0}
+.yun-inbox.edit-mode .yun-inbox-thumb,
+.yun-inbox.edit-mode .yun-video-thumb{background:transparent;border:0;box-shadow:none;display:grid;place-items:center}
+.yun-inbox.edit-mode .yun-media-toggle{background:transparent;color:var(--yun-ink);border:0;box-shadow:none;display:grid;place-items:center;padding:0}
+.yun-inbox .yun-star.active{color:#b47b18}
