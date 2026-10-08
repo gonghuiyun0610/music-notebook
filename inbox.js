@@ -121,6 +121,7 @@
     };
     const closePanel=()=>{setOpen(false);floating=false;panelDrag=null;box.classList.remove("panel-dragging");resetDock();};
     window.YunInbox.resetDock=resetDock;window.YunInbox.close=closePanel;
+    window.YunInbox.show=()=>{resetDock();setOpen(true);};
     window.YunInbox.toggle = anchor => {
       if(box.classList.contains("open")){closePanel();return;}
       floating=false;resetDock();
@@ -142,7 +143,7 @@
       box.classList.toggle("pinned",pinned);
     };
     pin.onclick = () => { pinned = !pinned;panelDrag=null;box.classList.remove("panel-dragging"); localStorage.setItem("yunInboxPinned", String(pinned)); applyPin(); };
-    applyPin(); setOpen(false);
+    applyPin(); setOpen(!!window.YunWorkspace?.isEditing);
     resetDock();
     box.querySelector(".yun-inbox-close").onclick = closePanel;
     const head=box.querySelector(".yun-inbox-head");
@@ -155,7 +156,12 @@
     head.onpointermove=e=>{if(!panelDrag||pinned)return;e.preventDefault();
       placePanel(Math.max(0,Math.min(window.innerWidth-box.getBoundingClientRect().width,panelDrag.left+e.clientX-panelDrag.x)),Math.max(0,Math.min(window.innerHeight-44,panelDrag.top+e.clientY-panelDrag.y)));
     };
-    const finishPanel=e=>{head.releasePointerCapture?.(e.pointerId);panelDrag=null;box.classList.remove("panel-dragging");};
+    const finishPanel=e=>{
+      if(!panelDrag)return;const lane=window.YunWorkspace?.dockRect,rect=box.getBoundingClientRect();
+      const touches=lane&&rect.right>=lane.left&&rect.left<=lane.right&&rect.bottom>=lane.top&&rect.top<=lane.bottom;
+      head.releasePointerCapture?.(e.pointerId);panelDrag=null;box.classList.remove("panel-dragging");
+      if(touches){floating=false;resetDock();}
+    };
     head.onpointerup=finishPanel;head.onpointercancel=finishPanel;head.onlostpointercapture=()=>{panelDrag=null;box.classList.remove("panel-dragging");};
     box.querySelector(".yun-collect-btn").onclick = () => { window.open(COLLECT_URL, "_blank", "noopener"); };
     box.querySelector(".yun-mode-btn").onclick = () => {

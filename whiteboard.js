@@ -312,8 +312,7 @@ function boardLocalTools(board, list) {
   panel.append(button("标题", () => {menu.open=false;boardAddHeading(board);}));
   BOARD_TYPES.forEach(([type,name]) => panel.append(button(name, () => {menu.open=false;boardAddPart(board,type);})));
   menu.append(panel);
-  const practice=button("",()=>markPractice(board),"board-practice-link");
-  practice.innerHTML='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7 .1l3-3a5 5 0 0 0-7-7l-2 2M14 11a5 5 0 0 0-7-.1l-3 3a5 5 0 0 0 7 7l2-2"/></svg>';
+  const practice=button("练",()=>markPractice(board),"board-practice-link");
   practice.title=board.needsPractice?"已加入练习库，点击管理":"加入练习库";practice.setAttribute("aria-label",practice.title);practice.setAttribute("aria-pressed",String(!!board.needsPractice));
   const inbox=button("灵感箱",e=>window.YunInbox?.toggle?.(e.currentTarget),"board-inbox-button");inbox.setAttribute("aria-expanded","false");
   const remove=button("×",()=>archiveDelete("point",board.id,{stayColumn:true}),"board-delete-button");remove.title="删除当前知识块";remove.setAttribute("aria-label",remove.title);
@@ -713,12 +712,14 @@ function renderBoard(b, list) {
   // dockCollapsed 只控制“栏”的展开/折叠，不改变每个组件自己的 collapsed 状态。
   let dock=null, dockList=null;
   if(editing){
-    dock=el("aside",{class:"board-module-dock"+(b.dockCollapsed?" dock-folded":""),"aria-label":"模块收纳栏"});
+    dock=el("aside",{class:"board-module-dock","aria-label":"内容缩略图栏"});
     const dockHead=el("div",{class:"board-module-dock-head"});
-    dockHead.append(
-      el("strong",{text:"模块 ("+b.children.filter(c=>c.collapsed).length+")"}),
-      button(b.dockCollapsed?"›":"‹",()=>{b.dockCollapsed=!b.dockCollapsed;changed();redraw();},"board-module-dock-toggle")
-    );
+    const grip=button("⠿",()=>{},"board-dock-drag-grip");grip.setAttribute("aria-label","上下拖动缩略图栏");grip.title="上下拖动缩略图栏";
+    let drag=null;dock.style.top=(Number(b.dockY)||0)+"px";
+    grip.onpointerdown=e=>{if(e.button!==0)return;e.preventDefault();e.stopPropagation();drag={id:e.pointerId,y:e.clientY,top:Number(b.dockY)||0};grip.setPointerCapture?.(e.pointerId);};
+    grip.onpointermove=e=>{if(!drag)return;e.preventDefault();const h=section.querySelector(".knowledge-board-scroll")?.clientHeight||500;b.dockY=Math.max(0,Math.min(h-56,drag.top+e.clientY-drag.y));dock.style.top=b.dockY+"px";};
+    grip.onpointerup=e=>{if(!drag)return;drag=null;grip.releasePointerCapture?.(e.pointerId);changed();};grip.onpointercancel=()=>{drag=null;};
+    dockHead.append(grip);
     dock.append(dockHead);
     dockList=el("div",{class:"board-module-dock-list"});
     dock.append(dockList);
